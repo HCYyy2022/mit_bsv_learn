@@ -87,3 +87,9 @@ module mkTbFftSuperFolded();
     let fft <- mkFftSuperFolded4;
     mkTestBench(fft);
 endmodule
+
+(* synthesize *)
+module mkTbFftSuperFolded2();
+    let fft <- mkFftSuperFolded2;
+    mkTestBench(fft);
+endmodule

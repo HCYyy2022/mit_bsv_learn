@@ -14,10 +14,13 @@ elastic: compile
 sfol: compile
 	bsc -sim -e mkTbFftSuperFolded -bdir buildDir -info-dir buildDir -simdir buildDir -o simSfol
 
-all: fold inelastic elastic sfol
+sfol2: compile
+	bsc -sim -e mkTbFftSuperFolded2 -bdir buildDir -info-dir buildDir -simdir buildDir -o simSfol2
+
+all: fold inelastic elastic sfol sfol2
 
 clean:
 	rm -rf buildDir sim*
 
-.PHONY: clean all fold inelastic elastic sfol compile
+.PHONY: clean all fold inelastic elastic sfol sfol2 compile
 .DEFAULT_GOAL := all

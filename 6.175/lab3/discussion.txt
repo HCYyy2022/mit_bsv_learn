@@ -1,0 +1,21 @@
+
+//*****************************************************************************************************//
+//**  Discussion Questions 1 and 2:
+//**  Assume you are given a black box module that performs a 10-stage algorithm. You can not look at its internal implementation,
+//**  but you can test this module by giving it data and looking at the output of the module. You have been told that it is
+//**  implemented as one of the structures covered in this lab, but you do not know which one.
+//**  1.How can you tell whether the implementation of the module is a folded implementation or whether it is a pipeline implementation? (3 Points)
+//**  2.Once you know the module has a pipeline structure, how can you tell if it is inelastic or if it is elastic? (2 Points)
+//*****************************************************************************************************//
+
+1. Test the throughput of the black box. If the throughput is once per cycle, it indicates a pipeline implementation.
+
+2. Block the output of the black box and then check if there is back pressure on the input of the black box.
+   If there is back pressure, it indicates a inelastic pipeline; otherwise, it is a elastic pipeline.
+   
+
+
+//*****************************************************************************************************//
+//** Discussion Question 3 (Optional): How long did you take to work on this lab?
+//*****************************************************************************************************//
+8 hours

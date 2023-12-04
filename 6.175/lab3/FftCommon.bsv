@@ -5,10 +5,18 @@ typedef 8 DataSz;
 typedef Bit#(DataSz) Data;
 typedef Complex#(Data) ComplexData;
 typedef 64 FftPoints;
-typedef Bit#(TLog#(FftPoints)) FftIdx;
-typedef Bit#(TLog#(TLog#(FftPoints))) StageIdx;
-typedef TDiv#(TLog#(FftPoints), 2) NumStages;
-typedef TDiv#(FftPoints, 4) BflysPerStage;
+typedef Bit#(TLog#(FftPoints)) FftIdx;              //6
+typedef Bit#(TLog#(TLog#(FftPoints))) StageIdx;     //3
+typedef TDiv#(TLog#(FftPoints), 2) NumStages;       //3
+typedef TDiv#(FftPoints, 4) BflysPerStage;          //16
+
+typedef TSub#( TDiv#(TLog#(FftPoints), 2), 2 ) NumStagesSub2;   //NumStages - 2
+typedef TSub#( TDiv#(TLog#(FftPoints), 2), 1 ) NumStagesSub1;   //NumStages - 1
+typedef TAdd#( TDiv#(TLog#(FftPoints), 2), 1 ) NumStagesAdd1;   //NumStages + 1
+typedef TAdd#( TDiv#(TLog#(FftPoints), 2), 2 ) NumStagesAdd2;   //NumStages + 2
+
+typedef 4 SuperRadix;
+typedef TDiv#(TDiv#(FftPoints, 4), SuperRadix) SuperTimes;
 
 
 Integer fftPoints = valueOf(FftPoints);
