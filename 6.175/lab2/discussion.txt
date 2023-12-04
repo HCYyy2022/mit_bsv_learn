@@ -1,19 +1,91 @@
 1.
+//*****************************************************************************************************//
+//** Discussion Question 1 (1 Point): Hardware-wise, unsigned addition is the same as signed addition when using two's complement encoding.
+//** Using evidence from the test bench, is unsigned multiplication the same as signed multiplication?
+//*****************************************************************************************************//
+
+ not same. test bench output is:
+//  PASSED case 1
+//      if signed: 105 * 115 test function gave 12075
+//      if unsigned: 105 * 115 test function gave 12075
+//  FAILED:
+//      if signed: 81 * -1 test function gave 20655 instead of -81
+//      if unsigned: 81 * 255 test function gave 20655 instead of 65455
+
+
 
 2.
+//*****************************************************************************************************//
+//** Discussion Question 2 (2 Points):
+//**  In mkTBDumb excluding the line
+//**  
+//**  function Bit#(16) test_function( Bit#(8) a, Bit#(8) b ) = multiply_unsigned( a, b );
+//**  and modifying the rest of the module to have
+//**  
+//**  (* synthesize *)
+//**  module mkTbDumb();
+//**      Empty tb <- mkTbMulFunction(multiply_unsigned, multiply_unsigned, True);
+//**      return tb;
+//**  endmodule
+//**  will result in a compilation error. What is that error? How does the original code fix the compilation error? You could also fix the error by having two function definitions as shown below.
+//**  
+//**  (* synthesize *)
+//**  module mkTbDumb();
+//**      function Bit#(16) test_function( Bit#(8) a, Bit#(8) b ) = multiply_unsigned( a, b );
+//**      function Bit#(16) ref_function( Bit#(8) a, Bit#(8) b ) = multiply_unsigned( a, b );
+//**      Empty tb <- mkTbMulFunction(test_function, ref_function, True);
+//**      return tb;
+//**  endmodule
+//**  Why is two function definitions not necessary? (i.e. why can the second operand to mkTbMulFunction have variables in its type?) Hint: Look at the types of the operands of mkTbMulFunction in TestBenchTemplates.bsv.
+//*****************************************************************************************************//
+
+(1) error is "Bit vector of unknown size"
+//   Error: "TestBench.bsv", line 9, column 17: (T0035)
+//     Bit vector of unknown size introduced near this location.
+//     Please remove unnecessary extensions, truncations and concatenations and/or
+//     provide more type information to resolve this ambiguity.
+//   make: *** [Makefile:5: compile] Error 1
+
+(2) The first parameter specifies the bit width, so the compiler can automatically infer the bit width of the second parameter.
+
+(3) Because the compiler has automatic inference, we only need to specify the bit width of one parameter
+
 
 3.
+//*****************************************************************************************************//
+//**   Discussion Question 3 (1 Point): Is your implementation of multiply_by_adding a signed multiplier or an unsigned multiplier?
+//**   (Note: if it does not match either multiply_signed or multiply_unsigned, it is wrong).
+//*****************************************************************************************************//
+unsigned
+
+
+
 
 4.
 Current Bits | Previous Bit | Original Booth Encoding | Radix-4 Booth Encoding
 -------------+--------------+-------------------------+-----------------------
-    00       |      0       |                         |           
-    00       |      1       |                         |           
+    00       |      0       |           00            |         00  
+    00       |      1       |           0+            |         0+
     01       |      0       |           +-            |         0+
-    01       |      1       |                         |           
-    10       |      0       |                         |           
-    10       |      1       |                         |           
-    11       |      0       |                         |           
-    11       |      1       |                         |           
+    01       |      1       |           +0            |         +0
+    10       |      0       |           -0            |         -0
+    10       |      1       |           -+            |         0-
+    11       |      0       |           0-            |         0-
+    11       |      1       |           00            |         00
 
 5.
+//*****************************************************************************************************//
+//**  Discussion Question 5 (1 Point): Now consider extending your Booth multiplier even further to a radix-8 Booth multiplier. 
+//**  This would be like doing 3 steps of the radix-2 Booth multiplier in a single step. Can all radix-8 Booth encodings be
+//**   represented with only one non-zero symbol like the radix-4 Booth multiplier? Do you think it would still make sense to make a radix-8 Booth multiplier?
+//*****************************************************************************************************//
+The radix-8 Booth multiplier requires more logic resources, so it may not be suitable for use in some resource-constrained situations.
+However, the radix-8 Booth multiplier maybe meaningful in computational tasks that require
+a large number of multiplication operations.
+
+
+
+//*****************************************************************************************************//
+//**  Discussion Question 6 (Optional): How long did you take to work on this lab?
+//*****************************************************************************************************//
+7 hours
