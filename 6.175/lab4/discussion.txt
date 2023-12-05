@@ -1,53 +1,66 @@
-1. What registers are read from and written to in each of the interface
-    methods of mkMyConflictFifo?
+//****************************************************************************************************************//
+//** Discussion Question 1 (5 points): What registers are read from and written to in each of the interface methods?
+//** Remember that register reads performed in guards count.
+//****************************************************************************************************************//
 
 notEmpty
-    read:
+    read   :    empty
     written:
 first
-    read:
+    read   :    empty, data, deqP
     written:
 deq
-    read:
-    written:
+    read   :    empty,deqP,
+    written:    full,empty,deqP
 notFull
-    read:
+    read   :    full
     written:
 enq
-    read:
-    written:
+    read   :    full, enqP,
+    written:    data, empty, full, enqP
 clear
-    read:
-    written:
+    read   :
+    written:    enqP,deqP,empty,full
 
 
 
-2. Fill the conflict Matrix for mkMyConflictFifo.
-
+//****************************************************************************************************************//
+//** 2. Fill the conflict Matrix for mkMyConflictFifo.
+//****************************************************************************************************************//
            notEmpty   first   deq   notFull   enq   clear
          +----------+-------+-----+---------+-----+-------+
-notEmpty |          |       |     |         |     |       |
+notEmpty |    CF    |  CF   |  <  |   CF    |  <  |   <   |
          +----------+-------+-----+---------+-----+-------+
-first    |          |       |     |         |     |       |
+first    |    CF    |  CF   |  <  |   CF    |  <  |   <   |
          +----------+-------+-----+---------+-----+-------+
-deq      |          |       |     |         |     |       |
+deq      |    >     |  >    |  C  |   >     |  C  |   C   |
          +----------+-------+-----+---------+-----+-------+
-notFull  |          |       |     |         |     |       |
+notFull  |    CF    |  CF   |  <  |   CF    |  <  |   <   |
          +----------+-------+-----+---------+-----+-------+
-enq      |          |       |     |         |     |       |
+enq      |    >     |  >    |  C  |   >     |  C  |   C   |
          +----------+-------+-----+---------+-----+-------+
-clear    |          |       |     |         |     |       |
+clear    |    >     |  >    |  C  |   >     |  C  |   C   |
          +----------+-------+-----+---------+-----+-------+
 
 
 
-3. Which conflicts from mkMyConflictFifo do not match the conflict-free FIFO
-    scheduling constraints?
+//****************************************************************************************************************//
+//** 3. Which conflicts from mkMyConflictFifo do not match the conflict-free FIFO scheduling constraints?
+//****************************************************************************************************************//
+
+notEmpty   <   deq
+notEmpty   <   enq
+first      <   deq
+first      <   enq
+deq        C   enq
+notFull    <   deq
+notFull    <   enq
 
 
 
-4. In your design of the clear method in mkMyCFFifo, how did you force the
-    scheduling constraint {enq, deq} < clear?
+//****************************************************************************************************************//
+//** 4. In your design of the clear method in mkMyCFFifo, how did you force the scheduling constraint {enq, deq} < clear?
+//****************************************************************************************************************//
 
-
+using wildcards in pattern matching for "canonicalize" rule.
 

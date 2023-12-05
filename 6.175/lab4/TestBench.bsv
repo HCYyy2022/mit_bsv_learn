@@ -71,6 +71,6 @@ endmodule
 
 (* synthesize *)
 module mkTbCFScheduling();
-    Bool has_clear = False;
+    Bool has_clear = True;
     let m <- mkTbSchedulingTemplate( mkMyCFFifo, CF, has_clear );
 endmodule
