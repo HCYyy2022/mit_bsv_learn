@@ -5,10 +5,10 @@ import Multiplier::*;
 import Vector:: *;
 
 import AudioProcessorTypes :: *;
-import FilterCoefficients::*;
+//import FilterCoefficients::*;
 
 
-module mkFIRFilter(AudioProcessor);
+module mkFIRFilter(Vector#(9, FixedPoint#(16,16)) coeffs, AudioProcessor ifc);
     FIFO#(Sample)  infifo <- mkFIFO();
     FIFO#(Sample) outfifo <- mkFIFO();
 
@@ -24,9 +24,9 @@ module mkFIRFilter(AudioProcessor);
             r[i] <= r[i-1];
         end
         
-        multipliers[0].putOperands(c[0], sample);
+        multipliers[0].putOperands(coeffs[0], sample);
         for(int i=1; i<9; i=i+1) begin
-            multipliers[i].putOperands(c[i], r[i-1]);
+            multipliers[i].putOperands(coeffs[i], r[i-1]);
         end
     endrule
 
