@@ -30,4 +30,5 @@ endfunction
 typedef 8 FFT_POINTS;
 typedef TLog#(FFT_POINTS) FFT_LOG_POINTS;
 typedef TSub#(TLog#(FFT_POINTS), 1) FFT_LOG_POINTS_SUB1;
+typedef Bit#(TLog#(TLog#(FFT_POINTS))) STAGE_IDX;     //3
 

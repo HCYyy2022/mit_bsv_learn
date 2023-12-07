@@ -131,6 +131,9 @@ module mkCombinationalFFT (FFT);
 
 endmodule
 
+//***************************************************************************//
+//problem2:  mkLinearFFT
+//***************************************************************************//
 module mkLinearFFT (FFT);
   // Statically generate the twiddle factors table.
   TwiddleTable twiddles = genTwiddles();
@@ -175,10 +178,54 @@ module mkLinearFFT (FFT);
   interface Get response = toGet(outputFIFO);
 endmodule
 
+//***************************************************************************//
+//problem3:  mkCircularFFT
+//***************************************************************************//
+module mkCircularFFT (FFT);
+  // Statically generate the twiddle factors table.
+  TwiddleTable twiddles = genTwiddles();
+  // Define the stage_f function which uses the generated twiddles.
+  function Vector#(FFT_POINTS, ComplexSample) stage_f(Bit#(TLog#(FFT_LOG_POINTS)) stage, Vector#(FFT_POINTS, ComplexSample) stage_in);
+      return stage_ft(twiddles, stage, stage_in);
+  endfunction
+
+  FIFOF#(Vector#(FFT_POINTS, ComplexSample)) inputFIFO   <- mkFIFOF(); 
+  FIFOF#(Vector#(FFT_POINTS, ComplexSample)) outputFIFO  <- mkFIFOF(); 
+  Reg#(  Vector#(FFT_POINTS, ComplexSample) ) stage_data <- mkRegU;
+  Reg#(STAGE_IDX)   stageIdx <- mkReg(0);
+  
+
+  rule circular_fft;
+    if(inputFIFO.notEmpty && stageIdx == 0 ) begin
+        stage_data <=  stage_f(stageIdx, inputFIFO.first());
+        stageIdx   <= stageIdx + 1;
+        inputFIFO.deq();
+    end
+    else if(stageIdx != 0 && stageIdx != (fromInteger(valueOf(FFT_LOG_POINTS_SUB1)))) begin
+        stage_data <=  stage_f(stageIdx, stage_data);
+        stageIdx   <= stageIdx + 1;
+    end
+    else if(stageIdx == (fromInteger(valueOf(FFT_LOG_POINTS_SUB1)))) begin
+        let temp = stage_f(stageIdx, stage_data);
+        outputFIFO.enq( temp  );
+        stageIdx   <=  0;
+    end
+  endrule
+
+  interface Put request;
+    method Action put(Vector#(FFT_POINTS, ComplexSample) x);
+        inputFIFO.enq(bitReverse(x));
+    endmethod
+  endinterface
+
+  interface Get response = toGet(outputFIFO);
+endmodule
+
 // Wrapper around The FFT module we actually want to use
 module mkFFT (FFT);
     //FFT fft <- mkCombinationalFFT();
-    FFT fft <- mkLinearFFT();
+    //FFT fft <- mkLinearFFT();
+    FFT fft <- mkCircularFFT();
     
     interface Put request = fft.request;
     interface Get response = fft.response;
