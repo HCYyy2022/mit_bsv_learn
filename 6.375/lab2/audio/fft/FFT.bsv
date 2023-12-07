@@ -2,6 +2,7 @@
 import ClientServer::*;
 import Complex::*;
 import FIFO::*;
+import FIFOF::*;
 import Reg6375::*;
 import GetPut::*;
 import Real::*;
@@ -130,9 +131,54 @@ module mkCombinationalFFT (FFT);
 
 endmodule
 
+module mkLinearFFT (FFT);
+  // Statically generate the twiddle factors table.
+  TwiddleTable twiddles = genTwiddles();
+  // Define the stage_f function which uses the generated twiddles.
+  function Vector#(FFT_POINTS, ComplexSample) stage_f(Bit#(TLog#(FFT_LOG_POINTS)) stage, Vector#(FFT_POINTS, ComplexSample) stage_in);
+      return stage_ft(twiddles, stage, stage_in);
+  endfunction
+
+  FIFOF#(Vector#(FFT_POINTS, ComplexSample)) inputFIFO  <- mkFIFOF(); 
+  FIFOF#(Vector#(FFT_POINTS, ComplexSample)) outputFIFO <- mkFIFOF(); 
+  Vector#(FFT_LOG_POINTS, Reg#(Maybe#( Vector#(FFT_POINTS, ComplexSample) ))) stage_data <- replicateM(mkReg(tagged Invalid));
+  
+
+  rule linear_fft;
+    if(inputFIFO.notEmpty) begin
+        stage_data[0] <= tagged Valid stage_f(0,inputFIFO.first());
+        inputFIFO.deq();
+    end
+    else begin
+        stage_data[0] <= tagged Invalid;
+    end
+
+    for(Integer stage = 1; stage < valueof(FFT_LOG_POINTS); stage=stage+1) begin
+        case(stage_data[stage-1]) matches
+            tagged Invalid   : stage_data[stage] <= tagged Invalid;
+            tagged Valid   .x: stage_data[stage] <= tagged Valid ( stage_f(fromInteger(stage), x ) );
+        endcase
+    end
+
+    if (isValid(stage_data[valueOf(FFT_LOG_POINTS_SUB1)])) begin
+        outputFIFO.enq( fromMaybe(?, stage_data[valueof(FFT_LOG_POINTS_SUB1)]) );
+    end
+
+  endrule
+
+  interface Put request;
+    method Action put(Vector#(FFT_POINTS, ComplexSample) x);
+        inputFIFO.enq(bitReverse(x));
+    endmethod
+  endinterface
+
+  interface Get response = toGet(outputFIFO);
+endmodule
+
 // Wrapper around The FFT module we actually want to use
 module mkFFT (FFT);
-    FFT fft <- mkCombinationalFFT();
+    //FFT fft <- mkCombinationalFFT();
+    FFT fft <- mkLinearFFT();
     
     interface Put request = fft.request;
     interface Get response = fft.response;

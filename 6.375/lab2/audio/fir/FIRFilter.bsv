@@ -1,46 +1,44 @@
-import Vector::*;
+
 import FIFO::*;
 import FixedPoint::*;
-
-import AudioProcessorTypes::*;
-import FilterCoefficients::*;
 import Multiplier::*;
+import Vector:: *;
 
-module mkFIRFilter (AudioProcessor);
-    FIFO#(Sample) infifo <- mkFIFO();
+import AudioProcessorTypes :: *;
+import FilterCoefficients::*;
+
+
+module mkFIRFilter(AudioProcessor);
+    FIFO#(Sample)  infifo <- mkFIFO();
     FIFO#(Sample) outfifo <- mkFIFO();
 
     Vector#(8, Reg#(Sample)) r <- replicateM(mkReg(0));
-
-    Vector#(9, Multiplier) multiplier <- replicateM(mkMultiplier());
-
-    rule mul_step;
+    Vector#(9, Multiplier)   multipliers <- replicateM(mkMultiplier());
+    
+    rule mult_process;
         let sample = infifo.first();
         infifo.deq();
-
+        
         r[0] <= sample;
-        for (Integer i = 0; i < 7; i = i + 1) begin
-            r[i + 1] <= r[i];
-        end 
-
-        multiplier[0].putOperands(c[0], sample);
-        for (Integer i = 0; i < 8; i = i + 1) begin
-            multiplier[i + 1].putOperands(c[i + 1], r[i]);
+        for(Integer i=1; i<8; i=i+1) begin
+            r[i] <= r[i-1];
         end
-    endrule 
-
-    rule acc_out ;
-        Vector#(9, FixedPoint#(16, 16)) acc;
-
-        acc[0] <- multiplier[0].getResult();
-        for (Integer i = 1; i < 9; i = i + 1) begin
-            let temp <- multiplier[i].getResult();
-            acc[i] = acc[i - 1] + temp; 
+        
+        multipliers[0].putOperands(c[0], sample);
+        for(int i=1; i<9; i=i+1) begin
+            multipliers[i].putOperands(c[i], r[i-1]);
         end
-
-        outfifo.enq(fxptGetInt(acc[8]));
     endrule
 
+    rule acc_process;
+        FixedPoint#(16, 16) accumulate = 0 ;
+        for(int i=0; i<9; i=i+1) begin
+            let t <- multipliers[i].getResult();
+            accumulate = accumulate + t;
+        end
+        outfifo.enq(fxptGetInt(accumulate));
+    endrule
+    
     method Action putSampleInput(Sample in);
         infifo.enq(in);
     endmethod
@@ -49,5 +47,7 @@ module mkFIRFilter (AudioProcessor);
         outfifo.deq();
         return outfifo.first();
     endmethod
+
+    
 
 endmodule
