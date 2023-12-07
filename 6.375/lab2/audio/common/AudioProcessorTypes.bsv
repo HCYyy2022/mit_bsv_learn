@@ -15,6 +15,7 @@ endinterface
 
 
 typedef Complex#(FixedPoint#(16, 16)) ComplexSample;
+typedef FixedPoint#(16, 16) FixForm;
 
 // Turn a real Sample into a ComplexSample.
 function ComplexSample tocmplx(Sample x);

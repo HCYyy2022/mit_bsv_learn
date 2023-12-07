@@ -1,0 +1,39 @@
+
+//***********************************************************************************************//
+1. In Problems 1-3, you have analyzed the areas and the critical-path delays of different Bluespec
+FFT designs using synth. How does the area and critical-path delay of the mkFFT module
+change for combinational, linear and circular designs? Please explain to your observation.
+Which design(s) would give you the highest throughput if all FFT designs were running at the
+same clock frequency?
+//***********************************************************************************************//
+(1)
+combinational : smallest areas, highest critical-path delays
+linear        : largest area, medium delay.
+circular      : medium area , medium delay
+
+(2) combinational, linear
+
+
+//***********************************************************************************************//
+2. Answer the three questions given in Problem 5 where we implemented polymorphic FIR filters.
+//***********************************************************************************************//
+modify the parameters passed to the mkFIRFilter module.
+
+
+//***********************************************************************************************//
+3. Before you made your FFT implementations polymorphic, the number of points and data
+type was specified with global typedefs. What are the advantages of making the interface and
+modules polymorphic instead of just using typedefs? Are there any disadvantages to making
+the interfaces and modules polymorphic?
+//***********************************************************************************************//
+advantages    : increase the reusability of the code, easy maintenance of the code
+disadvantages : The code is complex
+
+
+//***********************************************************************************************//
+4. Now that your FFT can be fully separated from the AudioPipeline, it makes sense to test the
+FFT modules independently. Describe in detail (two or three paragraphs is appropriate) how
+you can test your FFT implementations independently from the rest of the AudioPipeline.
+Are your FFT implementations correct for both larger and smaller number of points than 8?
+Is it any easier to test the FFT implementations because they are polymorphic?
+//***********************************************************************************************//
