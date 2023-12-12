@@ -2,6 +2,7 @@
 #include <complex.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include <fftw3.h>
@@ -58,7 +59,7 @@ complex double cmplxmp(double mag, double phs)
 }
 
 // Perform pitch adjustment on the given block of complex numbers..
-void pitchadjust(complex double* in, complex double* out)
+void pitchadjust(complex double* in, complex double* out, bool display)
 {
     // keep track of last rounds phases for each bin.
     // These persist accross calls to this function.
@@ -86,6 +87,19 @@ void pitchadjust(complex double* in, complex double* out)
             outphases[bin] += shifted;
             out[bin] = cmplxmp(mag, outphases[bin]);
         }
+    }
+    // Print the data
+    if(display){
+        printf("***************************************************\n");
+        printf("In values:\n");
+        for (i = 0; i < N; i++) {
+            printf("%f + %fi\n", creal(in[i]), cimag(in[i]));
+        }
+        printf("\nOut values:\n");
+        for (i = 0; i < N; i++) {
+            printf("%f + %fi\n", creal(out[i]), cimag(out[i]));
+        }
+        printf("***************************************************\n");
     }
 }
 
@@ -116,6 +130,7 @@ int main(int argc, char* argv[])
     short outblock[N] = {0};
 
     int i;
+    int cnt = 0;
     while (!feof(fin)) {
 
         // Read in the next S samples
@@ -141,7 +156,7 @@ int main(int argc, char* argv[])
         fftw_execute(forward);
 
         // Pitch Adjustment.
-        pitchadjust(outfft, infft);
+        pitchadjust(outfft, infft, (cnt < 3));
 
         // Inverse FFT
         // We have to scale down by N because fftw doesn't for us.
@@ -160,6 +175,7 @@ int main(int argc, char* argv[])
         for (i = N-S; i < N; i++) {
             outblock[i] = 0;
         }
+        cnt = cnt + 1;
     }
 
     fftw_destroy_plan(forward);
