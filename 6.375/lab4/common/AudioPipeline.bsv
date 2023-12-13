@@ -25,24 +25,72 @@ typedef 16 ISIZE;
 typedef 16 FSIZE;
 typedef 16 PSIZE;
 
+(* synthesize *)
+module mkAudioPipelineFFT( FFT#(FFT_POINTS, FixedPoint#(ISIZE, PSIZE)) );
+    FFT#(FFT_POINTS, FixedPoint#(ISIZE, PSIZE)) fft <- mkFFT();
+    return fft;
+endmodule
+
+(* synthesize *)
+module mkAudioPipelineFIR(AudioProcessor);
+    AudioProcessor fir <- mkFIRFilter(c);
+    return fir;
+endmodule
+
+(* synthesize *)
+module mkAudioPipelineToMP( ToMP#(N, ISIZE, FSIZE, PSIZE) );
+    ToMP#(N, ISIZE, FSIZE, PSIZE) tomp <- mkToMP();
+    return tomp;
+endmodule
+
+(* synthesize *)
+module mkAudioPipelinePitchAdjust( PitchAdjust#(N, ISIZE, FSIZE, PSIZE) );
+    FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
+    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
+    return pitch_adjust;
+endmodule
+
+(* synthesize *)
+module mkAudioPipelineFromMP( FromMP#(N, ISIZE, FSIZE, PSIZE) );
+    FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkFromMP();
+    return frommp;
+endmodule
+    
+
+(* synthesize *)
+module mkAudioPipelineIFFT( FFT#(N, FixedPoint#(ISIZE, PSIZE)) );
+    FFT#(N, FixedPoint#(ISIZE, PSIZE)) ifft <- mkIFFT();
+    return ifft;
+endmodule
+
+
+(* synthesize *)
 module mkAudioPipeline(AudioProcessor);
 
-    AudioProcessor fir <- mkFIRFilter(c);
+    //AudioProcessor fir <- mkFIRFilter(c);
+    AudioProcessor fir <- mkAudioPipelineFIR();
+
     Chunker#(S, Sample) chunker <- mkChunker();
 
     Vector#(N, Sample) init_vec = replicate(0);
     OverSampler#(S, N, Sample) over_sampler <- mkOverSampler(init_vec);
 
-    FFT#(FFT_POINTS, FixedPoint#(ISIZE, PSIZE)) fft <- mkFFT();
+    //FFT#(FFT_POINTS, FixedPoint#(ISIZE, PSIZE)) fft <- mkFFT();
+    FFT#(FFT_POINTS, FixedPoint#(ISIZE, PSIZE)) fft <- mkAudioPipelineFFT();
 
-    ToMP#(N, ISIZE, FSIZE, PSIZE) tomp <- mkToMP();
+    //ToMP#(N, ISIZE, FSIZE, PSIZE) tomp <- mkToMP();
+    ToMP#(N, ISIZE, FSIZE, PSIZE) tomp <- mkAudioPipelineToMP();
 
-    FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
-    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
+    //FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
+    //PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
+    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkAudioPipelinePitchAdjust();
 
-    FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkFromMP();
+    //FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkFromMP();
+    FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkAudioPipelineFromMP();
 
-    FFT#(N, FixedPoint#(ISIZE, PSIZE)) ifft <- mkIFFT();
+    //FFT#(N, FixedPoint#(ISIZE, PSIZE)) ifft <- mkIFFT();
+    FFT#(N, FixedPoint#(ISIZE, PSIZE)) ifft <- mkAudioPipelineIFFT();
+
     Overlayer#(N, S, Sample) over_layer <- mkOverlayer(init_vec);
     Splitter#(S, Sample) splitter <- mkSplitter();
 
