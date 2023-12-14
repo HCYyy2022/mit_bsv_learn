@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <math.h>
+#include <stdlib.h>
 
 #include "MyDutRequest.h"
 #include "MyDutIndication.h"
@@ -102,11 +104,22 @@ void run_test_bench(){
 
     pthread_mutex_destroy(&outpcmLock);
 
-    printf("run_test_bench finished!\n");
+    printf("[SW] run_test_bench finished!\n");
 }
 
 int main (int argc, const char **argv)
 {
+    if (argc < 2) {
+        printf("[SW] please input factor");
+        return -1;
+    }
+
+    double pf = atof(argv[1]); // holding pitch factor
+    uint16_t m_i = (uint16_t)floor(pf);
+    uint16_t m_f = (uint16_t)( pow(2, 16) * (pf - floor(pf)) );
+    // 32-bit unsigned integer that can be used by software
+    uint32_t factorPkt = (uint32_t)(m_i << 16) | m_f;
+
     // Service Indication messages from HW - Register the call-back functions to a indication thread
     MyDutIndication myIndication (IfcNames_MyDutIndicationH2S);
 
@@ -115,6 +128,9 @@ int main (int argc, const char **argv)
 
     // Invoke reset_dut method of HW request ifc (Soft-reset)
     device->reset_dut();
+
+    printf("[SW] reset finished, start set factor\n");
+    device->setFactor(factorPkt);
 
     // Run the testbench: send in.cpm
     run_test_bench();
