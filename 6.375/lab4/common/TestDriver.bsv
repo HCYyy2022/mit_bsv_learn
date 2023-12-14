@@ -3,11 +3,14 @@ import Counter::*;
 
 import AudioPipeline::*;
 import AudioProcessorTypes::*;
+import FixedPoint::*;
+import GetPut::*;
 
 (* synthesize *)
 module mkTestDriver (Empty);
 
-    AudioProcessor pipeline <- mkAudioPipeline();
+    SettableAudioProcessor#(ISIZE, FSIZE) audioPipeline <- mkAudioPipeline();
+    AudioProcessor pipeline = audioPipeline.audioProcessor;
 
     Reg#(File) m_in <- mkRegU();
     Reg#(File) m_out <- mkRegU();
@@ -60,6 +63,11 @@ module mkTestDriver (Empty);
         // drain.
         pipeline.putSampleInput(0);
     endrule
+    
+    rule  doSetFactor(m_inited && m_outstanding.value()  == 0 );
+        FixedPoint#(isize, fsize) factor = 2;
+        audioPipeline.setFactor.put(factor);
+    endrule  
 
     rule write(m_inited);
         Sample d <- pipeline.getSampleOutput();

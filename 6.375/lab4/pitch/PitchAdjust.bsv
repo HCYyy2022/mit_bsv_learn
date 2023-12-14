@@ -44,7 +44,7 @@ provisos (Add#(a__, psize, TAdd#(isize, isize)), Add#(b__, TLog#(nbins), isize),
 
     Reg#(FixedPoint#(isize, fsize)) bin <- mkReg(0);
     
-    Reg#(FixedPoint#(isize, fsize)) factor <- mkReg(0);
+    Reg#(FixedPoint#(isize, fsize)) factor <- mkReg(1);
     
 
     let phase = in[i].phase;

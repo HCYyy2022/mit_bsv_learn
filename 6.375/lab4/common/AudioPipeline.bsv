@@ -44,10 +44,15 @@ module mkAudioPipelineToMP( ToMP#(N, ISIZE, FSIZE, PSIZE) );
 endmodule
 
 (* synthesize *)
-module mkAudioPipelinePitchAdjust( PitchAdjust#(N, ISIZE, FSIZE, PSIZE) );
-    FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
-    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
-    return pitch_adjust;
+//module mkAudioPipelinePitchAdjust( PitchAdjust#(N, ISIZE, FSIZE, PSIZE) );
+//    FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
+//    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
+//    return pitch_adjust;
+//endmodule
+module mkAudioPipelinePitchAdjust( SettableAdjust#(N, ISIZE, FSIZE, PSIZE) );
+    //FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
+    SettableAdjust#(N, ISIZE, FSIZE, PSIZE) pitch <- mkPitchAdjust(valueOf(S));
+    return pitch;
 endmodule
 
 (* synthesize *)
@@ -65,7 +70,7 @@ endmodule
 
 
 (* synthesize *)
-module mkAudioPipeline(AudioProcessor);
+module mkAudioPipeline(SettableAudioProcessor#(ISIZE, FSIZE));
 
     //AudioProcessor fir <- mkFIRFilter(c);
     AudioProcessor fir <- mkAudioPipelineFIR();
@@ -83,7 +88,9 @@ module mkAudioPipeline(AudioProcessor);
 
     //FixedPoint#(isize, fsize) factor = fromInteger(valueOf(FACTOR));
     //PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkPitchAdjust(valueOf(S), factor);
-    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkAudioPipelinePitchAdjust();
+    //PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust <- mkAudioPipelinePitchAdjust();
+    SettableAdjust#(N, ISIZE, FSIZE, PSIZE) pitch <- mkAudioPipelinePitchAdjust();
+    PitchAdjust#(N, ISIZE, FSIZE, PSIZE) pitch_adjust =  pitch.adjust;
 
     //FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkFromMP();
     FromMP#(N, ISIZE, FSIZE, PSIZE) frommp <- mkAudioPipelineFromMP();
@@ -141,14 +148,20 @@ module mkAudioPipeline(AudioProcessor);
         splitter.request.put(x);
     endrule
 
-    method Action putSampleInput(Sample x);
-        fir.putSampleInput(x);
-    endmethod
 
-    method ActionValue#(Sample) getSampleOutput();
-        let x <- splitter.response.get();
-        return x;
-    endmethod
+    interface AudioProcessor audioProcessor;
+        method ActionValue#(Sample) getSampleOutput();
+            let x <- splitter.response.get();
+            return x;
+        endmethod
+
+        method Action putSampleInput(Sample x);
+            fir.putSampleInput(x);
+        endmethod
+    endinterface
+
+    interface Put setFactor = pitch.setFactor;
+    //interface Put setFactor = pitch.setFactor.Put;
 
 endmodule
 
