@@ -14,12 +14,22 @@ typedef Server#(
     Vector#(nbins, ComplexMP#(isize, fsize, psize))
 ) PitchAdjust#(numeric type nbins, numeric type isize, numeric type fsize, numeric type psize);
 
+interface SettableAdjust #(
+    numeric type nbins, numeric type isize,
+    numeric type fsize, numeric type psize
+    );
+    interface PitchAdjust#(nbins, isize, fsize, psize) adjust;
+    interface Put#(FixedPoint#(isize, fsize))          setFactor;
+endinterface
+
 
 // s - the amount each window is shifted from the previous window.
 //
 // factor - the amount to adjust the pitch.
 //  1.0 makes no change. 2.0 goes up an octave, 0.5 goes down an octave, etc...
-module mkPitchAdjust(Integer s, FixedPoint#(isize, fsize) factor, PitchAdjust#(nbins, isize, fsize, psize) ifc) provisos (Add#(a__, psize, TAdd#(isize, isize)), Add#(b__, TLog#(nbins), isize), Add#(psize, c__, isize));
+//module mkPitchAdjust(Integer s, FixedPoint#(isize, fsize) factor, PitchAdjust#(nbins, isize, fsize, psize) ifc) provisos (Add#(a__, psize, TAdd#(isize, isize)), Add#(b__, TLog#(nbins), isize), Add#(psize, c__, isize));
+module mkPitchAdjust(Integer s, SettableAdjust#(nbins, isize, fsize, psize) ifc) 
+provisos (Add#(a__, psize, TAdd#(isize, isize)), Add#(b__, TLog#(nbins), isize), Add#(psize, c__, isize));
     
     FIFO#(Vector#(nbins, ComplexMP#(isize, fsize, psize))) inputFIFO  <- mkFIFO();
     FIFO#(Vector#(nbins, ComplexMP#(isize, fsize, psize))) outputFIFO <- mkFIFO();
@@ -33,6 +43,9 @@ module mkPitchAdjust(Integer s, FixedPoint#(isize, fsize) factor, PitchAdjust#(n
     Reg#(Bit#(TLog#(nbins))) i <- mkReg(0);
 
     Reg#(FixedPoint#(isize, fsize)) bin <- mkReg(0);
+    
+    Reg#(FixedPoint#(isize, fsize)) factor <- mkReg(0);
+    
 
     let phase = in[i].phase;
     let mag   = in[i].magnitude;
@@ -81,14 +94,31 @@ module mkPitchAdjust(Integer s, FixedPoint#(isize, fsize) factor, PitchAdjust#(n
         outputFIFO.enq(out);
         i <= 0;
     endrule
+    
+    interface PitchAdjust adjust;
+        interface Put request;
+            method Action put(Vector#(nbins, ComplexMP#(isize, fsize, psize)) x);
+                inputFIFO.enq(x);
+            endmethod
+        endinterface
 
-    interface Put request;
-        method Action put(Vector#(nbins, ComplexMP#(isize, fsize, psize)) x);
-            inputFIFO.enq(x);
+        interface Get response = toGet(outputFIFO);
+    endinterface
+    
+    interface Put setFactor;
+        method Action put(FixedPoint#(isize, fsize) x) if(  done && i==0 );
+            factor <= x;
         endmethod
     endinterface
 
-    interface Get response = toGet(outputFIFO);
+    //interface request;     //expected interface tag
+    //interface Put request;
+    //    method Action put(Vector#(nbins, ComplexMP#(isize, fsize, psize)) x);
+    //        inputFIFO.enq(x);
+    //    endmethod
+    //endinterface
+
+    //interface Get response = toGet(outputFIFO);
 
 endmodule
 
