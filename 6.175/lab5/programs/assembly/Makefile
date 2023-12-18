@@ -38,7 +38,8 @@ rv32ui_tests = \
 # Build rules
 #--------------------------------------------------------------------
 
-RISCV_TOOL_DIR = /bsc-work/riscv32-unknown-elf/bin
+#RISCV_TOOL_DIR = /bsc-work/riscv32-unknown-elf/bin
+RISCV_TOOL_DIR = /opt/riscv/bin
 RISCV_PREFIX = $(RISCV_TOOL_DIR)/riscv32-unknown-elf
 # gcc
 RISCV_GCC = $(RISCV_PREFIX)-gcc
@@ -51,8 +52,9 @@ RISCV_LINK_OPTS = -T$(asmdir)/link.ld
 # objdump
 RISCV_OBJDUMP = $(RISCV_PREFIX)-objdump --disassemble --disassemble-zeroes --section=.text --section=.text.startup --section=.data
 # convert to VMH: 64KB memory
-ELF2HEX_TOOL_DIR = /bsc-work/riscv-fesvr/build
-RISCV_ELF2HEX = $(ELF2HEX_TOOL_DIR)/elf2hex
+#ELF2HEX_TOOL_DIR = /bsc-work/riscv-fesvr/build
+#RISCV_ELF2HEX = $(ELF2HEX_TOOL_DIR)/elf2hex
+RISCV_ELF2HEX = $(RISCV_TOOL_DIR)/elf2hex
 VMH_WIDTH = 8
 VMH_DEPTH = 65536
 

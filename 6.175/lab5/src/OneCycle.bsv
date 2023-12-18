@@ -12,7 +12,7 @@ import Decode::*;
 import Exec::*;
 import CsrFile::*;
 import Vector::*;
-import Fifo::*;
+import MyFifo::*;
 import Ehr::*;
 import GetPut::*;
 
