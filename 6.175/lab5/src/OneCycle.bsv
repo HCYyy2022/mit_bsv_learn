@@ -26,9 +26,9 @@ module mkProc(Proc);
 
     Bool memReady = iMem.init.done() && dMem.init.done();
     rule test (!memReady);
-	let e = tagged InitDone;
-	iMem.init.request.put(e);
-	dMem.init.request.put(e);
+        let e = tagged InitDone;
+        iMem.init.request.put(e);
+        dMem.init.request.put(e);
     endrule
     rule doProc(csrf.started);
         Data inst = iMem.req(pc);
@@ -45,8 +45,8 @@ module mkProc(Proc);
 
         // execute
         ExecInst eInst = exec(dInst, rVal1, rVal2, pc, ?, csrVal);  
-		// The fifth argument above is the predicted pc, to detect if it was mispredicted. 
-		// Since there is no branch prediction, this field is sent with a random value
+        // The fifth argument above is the predicted pc, to detect if it was mispredicted. 
+        // Since there is no branch prediction, this field is sent with a random value
 
         // memory
         if(eInst.iType == Ld) begin
@@ -55,11 +55,11 @@ module mkProc(Proc);
             let d <- dMem.req(MemReq{op: St, addr: eInst.addr, data: eInst.data});
         end
 
-		// commit
+        // commit
 
         // trace - print the instruction
         $display("pc: %h inst: (%h) expanded: ", pc, inst, showInst(inst));
-	$fflush(stdout);
+        $fflush(stdout);
 
         // check unsupported instruction at commit time. Exiting
         if(eInst.iType == Unsupported) begin
@@ -67,35 +67,35 @@ module mkProc(Proc);
             $finish;
         end
 
-		/* 
-		// These codes are checking invalid CSR index
-		// you could uncomment it for debugging
-		// 
-		// check invalid CSR read
-		if(eInst.iType == Csrr) begin
-			let csrIdx = fromMaybe(0, eInst.csr);
-			case(csrIdx)
-				csrCycle, csrInstret, csrMhartid: begin
-					$display("CSRR reads 0x%0x", eInst.data);
-				end
-				default: begin
-					$fwrite(stderr, "ERROR: read invalid CSR 0x%0x. Exiting\n", csrIdx);
-					$finish;
-				end
-			endcase
-		end
-		// check invalid CSR write
-		if(eInst.iType == Csrw) begin
-			let csrIdx = fromMaybe(0, eInst.csr);
-			if(csrIdx != csrMtohost) begin
-				$fwrite(stderr, "ERROR: invalid CSR index = 0x%0x. Exiting\n", csrIdx);
-				$finish;
-			end
-			else begin
-				$display("CSRW writes 0x%0x", eInst.data);
-			end
-		end
-		*/
+        /* 
+        // These codes are checking invalid CSR index
+        // you could uncomment it for debugging
+        // 
+        // check invalid CSR read
+        if(eInst.iType == Csrr) begin
+            let csrIdx = fromMaybe(0, eInst.csr);
+            case(csrIdx)
+                csrCycle, csrInstret, csrMhartid: begin
+                    $display("CSRR reads 0x%0x", eInst.data);
+                end
+                default: begin
+                    $fwrite(stderr, "ERROR: read invalid CSR 0x%0x. Exiting\n", csrIdx);
+                    $finish;
+                end
+            endcase
+        end
+        // check invalid CSR write
+        if(eInst.iType == Csrw) begin
+            let csrIdx = fromMaybe(0, eInst.csr);
+            if(csrIdx != csrMtohost) begin
+                $fwrite(stderr, "ERROR: invalid CSR index = 0x%0x. Exiting\n", csrIdx);
+                $finish;
+            end
+            else begin
+                $display("CSRW writes 0x%0x", eInst.data);
+            end
+        end
+        */
 
         // write back to reg file
         if(isValid(eInst.dst)) begin
@@ -116,8 +116,8 @@ module mkProc(Proc);
 
     method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started && memReady );
         csrf.start(0); // only 1 core, id = 0
-	$display("Start at pc 200\n");
-	$fflush(stdout);
+        $display("Start at pc 200\n");
+        $fflush(stdout);
         pc <= startpc;
     endmethod
 

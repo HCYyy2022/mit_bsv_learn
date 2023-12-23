@@ -18,6 +18,8 @@ import Types::*;
 import FShow::*;
 import CMemTypes::*;
 
+typedef enum {Fetch, Execute} State deriving (Bits, Eq);
+
 // cpu to host data type
 typedef enum {
 	ExitCode = 2'd0,
@@ -35,6 +37,12 @@ interface Proc;
     method ActionValue#(CpuToHostData) cpuToHost;
     method Action hostToCpu(Addr startpc);
     interface MemInitIfc iMemInit;
+    interface MemInitIfc dMemInit;
+endinterface
+
+interface Proc2;
+    method ActionValue#(CpuToHostData) cpuToHost;
+    method Action hostToCpu(Addr startpc);
     interface MemInitIfc dMemInit;
 endinterface
 
