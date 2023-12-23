@@ -18,7 +18,6 @@ import Types::*;
 import FShow::*;
 import CMemTypes::*;
 
-typedef enum {Fetch, Execute} State deriving (Bits, Eq);
 
 // cpu to host data type
 typedef enum {

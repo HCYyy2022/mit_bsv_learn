@@ -16,6 +16,8 @@ import MyFifo::*;
 import Ehr::*;
 import GetPut::*;
 
+typedef enum {Fetch, Execute} State deriving (Bits, Eq);
+
 (* synthesize *)
 module mkProc(Proc2);
     Reg#(Addr) pc <- mkRegU;
