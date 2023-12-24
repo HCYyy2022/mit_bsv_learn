@@ -26,7 +26,8 @@ interface ConnectalWrapper;
 endinterface
 
 module [Module] mkConnectalWrapper#(ConnectalProcIndication ind)(ConnectalWrapper);
-   Proc2 m <- mkProc();
+   Proc m <- mkProc();
+   //Proc2 m <- mkProc();
 
    rule relayMessage;
 	let mess <- m.cpuToHost();

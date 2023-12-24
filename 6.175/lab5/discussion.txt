@@ -1,0 +1,87 @@
+//****************************************************************************************************************//
+//**  Discussion Question 1 (5 Points): What is the IPC for the two-stage pipelined processor for 
+//**  each benchmark tested by the run_bmarks.sh script?
+//****************************************************************************************************************//
+(1) Benchmark median
+Cycles = 5930
+Insts  = 4243
+IPC = 4243 / 5930 = 0.7155
+
+(2) Benchmark multiply
+Cycles = 33122
+Insts  = 20893
+IPC = 20893 / 33122 = 0.6308
+
+(3) Benchmark qsort
+Cycles = 168377
+Insts  = 123496
+IPC = 123496 / 168377 = 0.7334
+
+(4) Benchmark tower
+Cycles = 4513
+Insts  = 4168
+IPC = 4168 / 4513 = 0.9236
+
+
+(5) Benchmark vvadd
+Cycles = 3005
+Insts  = 2408
+IPC = 2408 / 3005 = 0.8013
+
+
+//****************************************************************************************************************//
+//** Discussion Question 2 (5 Points): What is the formula to compute the next address predictor accuracy from the IPC? 
+//** (Hint, how many cycles does it take to execute an instruction when the PC+4 prediction is correct? What about
+//**  when it is incorrect?) Using this formula, what is the accuracy of the PC+4 next address predictor for each benchmark?
+//****************************************************************************************************************//
+(1) Prediction_Accuracy  = Number_of_Correct_Predictions  / Total_Number_of_Predictions
+
+
+(2) prediction is correct   : 1 cycles
+    prediction is incorrect : 2 cycles
+
+x -> Number_of_Correct_Predictions
+y -> Number_of_Incorrect_Predictions
+t -> Total_Number_of_Predictions
+c -> Total_Number_of_Cycles
+A -> Accuracy
+
+x + y  = t
+x + 2y = c
+A = x / t
+
+    =>
+
+y = c - t
+x = 2t - c
+A = 2 - c/t = 2 - 1/IPC
+
+1) Benchmark median      A =  0.6024
+2) Benchmark multiply    A =  0.4147
+3) Benchmark qsort       A =  0.6365
+4) Benchmark tower       A =  0.9173
+5) Benchmark vvadd       A =  0.7520
+
+
+//****************************************************************************************************************//
+//** Discussion Question 3 (5 Points): What is the IPC for the two-stage pipelined processor with a BTB for each
+//** benchmark tested by the run_bmarks.sh script? How much has it improved over the previous version?
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 4 (5 Points): How does adding the BTB change the performance of the bpred_* microbenchmarks?
+//** (Hint: the number of cycles for bpred_j should go down.)
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 5 (Optional): How long did it take you to complete this lab?
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 6 (5 Bonus Points): Look at the assembly source for the bpred_* benchmarks and explain
+//** why each benchmark improved, stayed the same, or got worse.
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 7 (5 Bonus Points): How would you improve the BTB to improve the results of bpred_bht?
+//****************************************************************************************************************//

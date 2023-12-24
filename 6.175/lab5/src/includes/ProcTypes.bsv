@@ -138,6 +138,13 @@ typedef struct {
 } DecodedInst deriving(Bits, Eq, FShow);
 
 typedef struct {
+    DecodedInst      dInst;
+    Addr             pc;
+    Addr             ppc;
+    Bool             epoch;
+} DecodedInst2 deriving(Bits, Eq, FShow);
+
+typedef struct {
     IType            iType;
     Maybe#(RIndx)    dst;
 	Maybe#(CsrIndx)  csr;
