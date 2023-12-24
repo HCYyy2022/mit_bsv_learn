@@ -67,6 +67,36 @@ A = 2 - c/t = 2 - 1/IPC
 //** Discussion Question 3 (5 Points): What is the IPC for the two-stage pipelined processor with a BTB for each
 //** benchmark tested by the run_bmarks.sh script? How much has it improved over the previous version?
 //****************************************************************************************************************//
+(1)Benchmark median
+Cycles = 5512
+Insts  = 4243
+IPC = 4243 / 5512 = 0.7698
+improved = 0.7698 - 0.7155 = 0.0813
+
+(2)Benchmark multiply
+Cycles = 22070
+Insts  = 20893
+IPC = 20893 / 22070 = 0.9467
+improved = 0.9467 - 0.6308 = 0.3159
+
+(3)Benchmark qsort
+Cycles = 155349
+Insts  = 123496
+IPC = 123496 / 155349 = 0.7950
+improved = 0.7950 - 0.7334 = 0.0616
+
+(4)Benchmark tower
+Cycles = 4359
+Insts  = 4168
+IPC = 4168 / 4359 = 0.9562
+improved = 0.9562 - 0.9236 = 0.0326
+
+(5)Benchmark vvadd
+Cycles = 2411
+Insts  = 2408
+IPC = 2408 / 2411 = 0.9988
+improved = 0.9988 - 0.8013 = 0.1975
+
 
 //****************************************************************************************************************//
 //** Discussion Question 4 (5 Points): How does adding the BTB change the performance of the bpred_* microbenchmarks?
@@ -76,6 +106,7 @@ A = 2 - c/t = 2 - 1/IPC
 //****************************************************************************************************************//
 //** Discussion Question 5 (Optional): How long did it take you to complete this lab?
 //****************************************************************************************************************//
+12h
 
 //****************************************************************************************************************//
 //** Discussion Question 6 (5 Bonus Points): Look at the assembly source for the bpred_* benchmarks and explain
