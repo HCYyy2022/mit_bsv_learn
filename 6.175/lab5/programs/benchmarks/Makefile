@@ -55,7 +55,7 @@ RISCV_OBJDUMP = $(RISCV_PREFIX)-objdump --disassemble --disassemble-zeroes --sec
 # convert to VMH: 64KB memory
 #ELF2HEX_TOOL_DIR = /bsc-work/riscv-fesvr/build
 #RISCV_ELF2HEX = $(ELF2HEX_TOOL_DIR)/elf2hex
-RISCV_ELF2HEX = $(RISCV_TOOL_DIR)/elf2hex
+RISCV_ELF2HEX = $(RISCV_TOOL_DIR)/bin/elf2hex
 VMH_WIDTH = 8
 VMH_DEPTH = 65536
 

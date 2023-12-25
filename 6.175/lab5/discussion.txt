@@ -102,17 +102,67 @@ improved = 0.9988 - 0.8013 = 0.1975
 //** Discussion Question 4 (5 Points): How does adding the BTB change the performance of the bpred_* microbenchmarks?
 //** (Hint: the number of cycles for bpred_j should go down.)
 //****************************************************************************************************************//
+1. In a branch prediction buffer, there is an entry that stores the jump addresses of instructions such as J, Jr, and B.
+
+2. When the jump instruction is executed for the first time, a prediction failure occurs,
+but subsequent executions of jump instructions stored in the branch prediction buffer will result in correct predictions.
+
+
 
 //****************************************************************************************************************//
 //** Discussion Question 5 (Optional): How long did it take you to complete this lab?
 //****************************************************************************************************************//
-12h
+15h
 
 //****************************************************************************************************************//
 //** Discussion Question 6 (5 Bonus Points): Look at the assembly source for the bpred_* benchmarks and explain
 //** why each benchmark improved, stayed the same, or got worse.
 //****************************************************************************************************************//
+TwoStageBTB:
+bpred_bht
+1612
+1010
+IPC = 1010 / 1612 = 0.6266
+
+bpred_j
+1844
+1806
+IPC = 1806 / 1844 = 0.9794
+
+bpred_ras
+436
+286
+IPC = 286 / 436 = 0.6560
+
+*****************************
+TwoStage
+bpred_bht
+1410
+1010
+IPC = 1010 / 1410 = 0.7163
+
+bpred_j
+5206
+1806
+IPC = 1806 / 5206 = 0.3469
+
+bpred_ras
+540
+286
+IPC = 286 / 540 = 0.5296
+
+bpred_bht:
+improved, The bpred_bht program executes a large number of B instructions, which are recorded in the BTB, resulting in accurate predictions.
+
+bpred_j :
+improved,The bpred_j program executes many j instructions, which are recorded in the BTB, resulting in accurate predictions.
+
+bpred_ras
+improved,The bpred_j program executes many jal instructions, which are recorded in the BTB, resulting in accurate predictions.
+
 
 //****************************************************************************************************************//
 //** Discussion Question 7 (5 Bonus Points): How would you improve the BTB to improve the results of bpred_bht?
 //****************************************************************************************************************//
+add direction predictors
+
