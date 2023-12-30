@@ -46,7 +46,6 @@ module mkProc(Proc);
     rule doFetchDecode(csrf.started);
         Data inst = iMem.req(pc);         // fetch
         DecodedInst dInst = decode(inst); // decode
-        $display("Fetch: PC = %x, inst = %x, expanded = ", pc, inst, showInst(inst));
         
         if(execRedirect.notEmpty) begin
             let redict = execRedirect.first;
@@ -54,7 +53,6 @@ module mkProc(Proc);
             pc     <= redict.nextPc;
             execRedirect.deq;
             btb.update(redict.pc, redict.nextPc);
-            $display("Fetch: Mispredict, redirected by Execute");
             //if(redict.mispredict) begin
             //    fEpoch <= !fEpoch;
             //    pc     <= redict.nextPc;
@@ -101,14 +99,10 @@ module mkProc(Proc);
             //    execRedirect.enq(Redirect{pc:pc, nextPc:eInst.addr, brType:eInst.iType, taken:eInst.brTaken, mispredict:eInst.mispredict});
             //end
             if(eInst.mispredict) begin
-				$display("Execute finds misprediction: PC = %x, nextPc = %x", x.pc, eInst.addr);
                 //btb.update(x.pc, eInst.addr);   //如果在这里更新，doExecute rule和doFetchDecode rule会发生冲突导致非分支的IPC也为0.5, 冲突的原因？//TODO:  再编译一次看看
                 //execRedirect.enq(Redirect{pc:pc, nextPc:eInst.addr, brType:eInst.iType, taken:eInst.brTaken, mispredict:eInst.mispredict});      //FIXME:  pc值写错了
                 execRedirect.enq(Redirect{pc:x.pc, nextPc:eInst.addr, brType:eInst.iType, taken:eInst.brTaken, mispredict:eInst.mispredict});
                 eEpoch <= !eEpoch;
-            end
-            else begin
-                $display("Execute: PC = %x", x.pc);
             end
         end
         f2d.deq;
