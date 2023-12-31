@@ -1,0 +1,26 @@
+//****************************************************************************************************************//
+//**  Discussion Question 1 (10 Points): Debugging practice!
+//**  
+//**  If you replace the BTB with a simple pc + 4 address prediction, the processor still works, but it does not perform as well.
+//**  If you replace it with a really bad predictor that predicts pc is the next instruction for each pc, it should still work but 
+//**  have even worse performance because each instruction would require redirection (unless the instruction loops back to itself).
+//**  If you actually set the prediction to pc, you will get errors in the assembly tests; the first one will be from cache.riscv.vmh.
+//**  
+//**  What is the error you get?
+//**  What is happening in the processor to cause that to happen?
+//**  Why do not you get this error with PC+4 and BTB predictors?
+//**  How would you fix it?
+//**  You do not actually have to fix this bug, just answer the questions. (Hint: look at the addr field of ExecInst structure.)
+//****************************************************************************************************************//
+(1) ERROR: Executing unsupported instruction at pc: 00004000. Exiting
+(2) 
+    1) When executing the instruction: sw x3, 0(x1), the calculated eInst.addr is aluRes, which is rVal1 + aluVal2, with a value of 0x4000.
+    2) When branch prediction fails, eInst.addr is used as the address for repairing the jump.
+    3) Therefore, using 0x4000 as the new jump address here is incorrect.
+    
+(3)The instruction "sw x3, 0(x1)" does not generate a branch. When using pc+4 or BTB as the predictor,
+pc+4 will be used as the next branch prediction address, which is correct. Therefore, there will be no
+need for prediction address correction, and the issue mentioned will not occur.
+
+(4) Modify Exec.bsv to use pc+4 as the result of eInst.addr when the instruction is sw.
+
