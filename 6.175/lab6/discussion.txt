@@ -81,3 +81,94 @@ IPC = 4168 / 6219 = 0.6702
 Cycles = 3621
 Insts  = 2408
 IPC = 2408 / 3621 = 0.6650
+
+//****************************************************************************************************************//
+//** Discussion Question 6 (10 Points): Planning!
+//** 
+//** One of the hardest things about this lab is properly training and integrating the BHT into the pipeline.
+//** There are many mistakes that can be made while still seeing decent results. By having a good plan based 
+//** on the fundamentals of direction prediction, you will avoid many of those mistakes.
+//** 
+//** For this discussion question, state your plan for integrating the BHT into the pipeline. The following questions should help guide you:
+//** 
+//** (1)Where will the BHT be positioned in the pipeline?
+        Decode
+
+//** (2)What pipeline stage performs lookups into the BHT?
+        Decode
+        
+//** (3)In which pipeline stage will the BHT prediction be used?
+        Decode
+
+//** (4)Will the BHT prediction need to be passed between pipeline stages?
+        yes
+
+//** (5)How to redirect PC using BHT prediction?
+        First, use BTB prediction, then use BHT prediction, and ultimately use the predicted value from BHT.
+
+//** (6)Do you need to add a new epoch?
+        yes, decEpoch
+
+//** (7)How to handle the redirect messages?
+        Decode stage will perform BHT prediction for Br type instructions, and will compare the prediction result
+        with the btb prediction result from the Fetch stage. If they are not equal, the BHT prediction result will be used,
+        and a decRedirect will be generated in the Decode stage.
+        
+        The Fetch stage will use btb for prediction. In the Execute stage, when the predicted result is not equal to the actual jump
+        address of the instruction, an exeRedirect will be generated.
+        
+        Both exeRedirect and decRedirect will redirect the PC, with exeRedirect having a higher priority than decRedirect.
+
+//** (8)Do you need to change anything to the current instruction and its data structures if redirecting?
+        yes
+
+//** (9)How will you train the BHT?
+        During the Execute phase, train all instructions of type Br.
+
+//** (10)Which stage produces training data for the BHT?
+        Execute
+
+//** (11)Which stage will use the interface method to train the BHT?
+        Execute
+
+//** (12)How to send training data?
+        Call the bht.update method with the program counter and eInst.brTaken as parameters during the execution phase.
+
+//** (13)For which instructions will you train the BHT?
+        Br Type
+        
+//** (14)How will you know if your BHT works?
+        Check if the IPC of bpred_bht has improved.
+//****************************************************************************************************************//
+
+
+//****************************************************************************************************************//
+//** Discussion Question 7 (5 Points): How much improvement do you see in the bpred_bht.riscv.vmh test over the processor
+//** in SixStage.bsv?
+//****************************************************************************************************************//
+SixStageBHT
+IPC = 1007 / 2456 = 0.4100
+
+SixStage
+IPC = 1007 / 2995 = 0.3362
+improved = 0.0738
+
+
+//****************************************************************************************************************//
+//** Discussion Question 8 (5 Points): How much improvement do you see in the bpred_j.riscv.vmh and bpred_j_noloop.riscv.vmh
+//** tests over the processor in SixStage.bsv?
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 9 (5 Points): What IPC do you get for each benchmark? How much improvement is this over
+//** the original six-stage pipeline?
+//****************************************************************************************************************//
+
+//****************************************************************************************************************//
+//** Discussion Question 10 (Optional): How long did it take you to complete this lab?
+//****************************************************************************************************************//
+
+
+
+
+
