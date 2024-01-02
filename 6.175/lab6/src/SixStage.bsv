@@ -67,7 +67,7 @@ module mkProc(Proc);
     FPGAMemory     dMem       <- mkFPGAMemory;
     CsrFile        csrf       <- mkCsrFile;
     Btb#(6)        btb        <- mkBtb; // 64-entry BTB
-    Scoreboard#(6) sb         <- mkCFScoreboard;
+    Scoreboard#(4) sb         <- mkCFScoreboard;
     Reg#(Bool)     exeEpoch   <- mkReg(False); // global epoch for redirection from Execute stage
 
     Ehr#(2, Maybe#(ExeRedirect)) exeRedirect <- mkEhr(Invalid); //EHR for redirection
