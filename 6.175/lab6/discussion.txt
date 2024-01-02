@@ -24,3 +24,60 @@ need for prediction address correction, and the issue mentioned will not occur.
 
 (4) Modify Exec.bsv to use pc+4 as the result of eInst.addr when the instruction is sw.
 
+
+//****************************************************************************************************************//
+//** Discussion Question 2 (5 Points): What evidence do you have that all pipeline stages can fire in the same cycle?
+//****************************************************************************************************************//
+evidence 1: I have printed out the detailed execution process of each phase in each cycle. The printed result for a certain
+cycle is as follows:
+    # Cycle          4 ----------------------------------------------------
+    # [Fetch] : PC = 00000214
+    # [Decode]: PC = 00000210, inst = 00000013, expanded = addi r 0 = r 0 0x0
+    # [RegFetch]: PC = 0000020c, insert sb = 00
+    # [Execute] : PC = 00000208
+    # [Memory] : valid eInst, PC = 00000204
+    # [WriteBack] :  valid eInst, PC = 00000200, remove sb
+
+evidence 2: In the simple test, 104 cycles were performed with 100 instructions executed.
+
+
+//****************************************************************************************************************//
+//** Discussion Question 3 (5 Points): In your six-stage pipelined processor, how many cycles does it take to correct
+//** a mispredicted instruction?
+//****************************************************************************************************************//
+four
+
+//****************************************************************************************************************//
+//** Discussion Question 4 (5 Points): If an instruction depends on the result of the instruction immediately before
+//** it in the pipeline, how many cycles is that instruction stalled?
+//****************************************************************************************************************//
+four
+
+//****************************************************************************************************************//
+//** Discussion Question 5 (5 Points): What IPC do you get for each benchmark?
+//****************************************************************************************************************//
+(1) Benchmark median
+Cycles = 9899
+Insts  = 4243
+IPC = 4243 / 9899 = 0.4286
+
+(2) Benchmark multiply
+Cycles = 33540
+Insts  = 20893
+IPC = 20893 / 33540 = 0.6229
+
+(3) Benchmark qsort
+Cycles = 300387
+Insts  = 123496
+IPC = 123496 / 300387 = 0.4111
+
+
+(4) Benchmark tower
+Cycles = 6219
+Insts  = 4168
+IPC = 4168 / 6219 = 0.6702
+
+(5) Benchmark vvadd
+Cycles = 3621
+Insts  = 2408
+IPC = 2408 / 3621 = 0.6650
