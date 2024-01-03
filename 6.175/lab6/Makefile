@@ -41,3 +41,6 @@ sixStBHT:
 	mkdir -p buildDir
 	bsc -u -sim -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -aggressive-conditions -keep-fires src/SixStageBHT.bsv
 	
+sixStBonus:
+	mkdir -p buildDir
+	bsc -u -sim -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -aggressive-conditions -keep-fires src/SixStageBonus.bsv
