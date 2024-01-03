@@ -201,6 +201,7 @@ improved = 0.0738
 | SixStageBHT       | 2456      | 2164    | 804       | 140            |
 | SixStageBHT(J)    | 2456      | 2132    | 783       | 73             |
 | SixStageBonus ex5 | 2301      | 2132    | 729       | 73             |
+| SixStageBonus ex6 | 2301      | 2132    | 729       | 73             |
 
 
 

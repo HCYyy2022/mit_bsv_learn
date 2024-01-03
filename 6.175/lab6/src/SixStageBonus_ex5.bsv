@@ -1,4 +1,4 @@
-// six stage bonus ex6
+// six stage bonus ex5
 
 import Types::*;
 import ProcTypes::*;
@@ -17,7 +17,6 @@ import Ehr::*;
 import GetPut::*;
 import Btb::*;
 import Bht::*;
-import Ras::*;
 import Scoreboard::*;
 
 
@@ -26,14 +25,14 @@ typedef struct{
     Addr ppc;
     Bool eEpoch;
     Bool dEpoch;
-    //Bool rEpoch;
+    Bool rEpoch;
 } F2D deriving (Bits, Eq);
 
 typedef struct {
     Addr pc;
     Addr ppc;
     Bool eEpoch;
-    //Bool rEpoch;
+    Bool rEpoch;
     DecodedInst dInst;
 } D2R deriving (Bits, Eq);
 
@@ -67,15 +66,15 @@ typedef struct {
     Addr nextPc;
 } DecRedirect deriving (Bits, Eq);
 
-//typedef struct {
-//    Addr pc;
-//    Addr nextPc;
-//} RegRedirect deriving (Bits, Eq);
+typedef struct {
+    Addr pc;
+    Addr nextPc;
+} RegRedirect deriving (Bits, Eq);
 
 //btb只有在预测错误的时候进行训练
 //bht对所有Br类型的指令进行训练
 //bht预测在decode阶段，训练在excute阶段，因为大多数的情况中，循环中的跳转指令不是紧挨的,训练有几个周期的滞后也没有影响
-//ras放在decode阶段，通过ras，可以将ex5中RegFetch阶段的重定向前移到Decode阶段
+//Jr预测放在RegFetch阶段，因为Jr的预测需要用到rVal1的值
 
 
 (* synthesize *)
@@ -88,13 +87,14 @@ module mkProc(Proc);
     Btb#(6)           btb        <- mkBtb; // 64-entry BTB
     DirectionPred#(8) bht        <- mkBHT; //256-entry BHT
     Scoreboard#(4)    sb         <- mkCFScoreboard;
-    RAS#(8)           jarRas     <- mkRas;
     //NOTE: 和教材上的不同，这里使用的是全局的Epoch，教材上使用的是分布式的
     Reg#(Bool)        exeEpoch   <- mkReg(False); // global epoch for redirection from Execute  stage
     Reg#(Bool)        decEpoch   <- mkReg(False); // global epoch for redirection from Decode   stage
+    Reg#(Bool)        regEpoch   <- mkReg(False); // global epoch for redirection from RegFetch stage
 
     Ehr#(2, Maybe#(ExeRedirect)) exeRedirect <- mkEhr(Invalid); //EHR for Excute redirection
     Ehr#(2, Maybe#(DecRedirect)) decRedirect <- mkEhr(Invalid); //EHR for Decode redirection
+    Ehr#(2, Maybe#(RegRedirect)) regRedirect <- mkEhr(Invalid); //EHR for Decode redirection
 
     // FIFO between two stages
     Fifo#(2, F2D) f2dFifo <- mkCFFifo;
@@ -110,7 +110,7 @@ module mkProc(Proc);
         let ppc = btb.predPc(pcReg[0]);
         pcReg[0] <= ppc;
         
-        let f2d = F2D{pc:pcReg[0], ppc:ppc, eEpoch:exeEpoch, dEpoch:decEpoch};
+        let f2d = F2D{pc:pcReg[0], ppc:ppc, eEpoch:exeEpoch, dEpoch:decEpoch, rEpoch:regEpoch};
         f2dFifo.enq(f2d);
         $display("[Fetch] : PC = %x", pcReg[0]);
     endrule
@@ -125,53 +125,30 @@ module mkProc(Proc);
         else if(f2d.dEpoch != decEpoch) begin
             $display("[Decode][Kill instruction,decEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
         end
+        else if(f2d.rEpoch != regEpoch) begin
+            $display("[Decode][Kill instruction,regEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+        end
         else begin
             let dInst = decode(inst);
-            let src1 = fromMaybe(?, dInst.src1);
-            let dst  = fromMaybe(?, dInst.dst);
-            let predPc    = f2d.ppc;   // addrPredPc
-            let curPredPc = f2d.ppc; 
-            let pushAddr = f2d.pc + 4;
-            Addr popAddr = 0; 
-            Bool popValid = False;
-
-            //jarRas push and pop
-            if( (dInst.iType == Jr || dInst.iType == J) &&  dst == 1) begin
-                jarRas.push(pushAddr);
-                $display("[Decode][initiate function call, jarRas push]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
-            end
-            else if(dInst.iType == Jr && dst == 0 && src1 == 1) begin
-                let popMaybeAddr <- jarRas.pop();
-                popValid = isValid(popMaybeAddr);
-                popAddr  = fromMaybe(?, popMaybeAddr);
-                $display("[Decode][return from function call, jarRas pop]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
-            end
-
-            //decode predPc
-            if(dInst.iType == Br) begin
-                curPredPc  = f2d.pc + fromMaybe(?, dInst.imm);
-                curPredPc  = bht.ppcDP(f2d.pc, curPredPc);
-            end
-            else if(dInst.iType == J) begin
-                curPredPc  = f2d.pc + fromMaybe(?, dInst.imm);
-            end
-            else if(dInst.iType == Jr && dst == 0 && src1 == 1) begin
-                if(popValid) begin
-                    curPredPc  = popAddr;
+            let predPc = f2d.ppc;   // addrPredPc
+            if(dInst.iType == Br || dInst.iType == J) begin
+            //if(dInst.iType == Br) begin
+                let dirPredPc  = f2d.pc + fromMaybe(?, dInst.imm);
+                //let dirPredPc2 = bht.ppcDP(f2d.pc, dirPredPc); 
+                let dirPredPc2 = dInst.iType == Br ? bht.ppcDP(f2d.pc, dirPredPc) : dirPredPc;  //J型指令不使用bht,因为循环中较少使用J型指令,直接使用计算结果作为预测值
+                if(dirPredPc2 != predPc) begin
+                    $display("[Decode][Br dir Mispredict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                    decRedirect[0] <= tagged Valid DecRedirect{pc:f2d.pc, nextPc:dirPredPc2 };
+                    predPc = dirPredPc2;  //dirPredPc2
+                end
+                else begin
+                    $display("[Decode][Br dir right predict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
                 end
             end
-
-            //decode redirect
-            if(curPredPc != predPc) begin
-                $display("[Decode][find Mispredict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
-                decRedirect[0] <= tagged Valid DecRedirect{pc:f2d.pc, nextPc:curPredPc };
-                predPc = curPredPc;  //curPredPc
-            end
             else begin
-                $display("[Decode][right predict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                $display("[Decode][not Br Inst]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
             end
-
-            let d2r = D2R{pc:f2d.pc, ppc:predPc, eEpoch:f2d.eEpoch, dInst:dInst};
+            let d2r = D2R{pc:f2d.pc, ppc:predPc, eEpoch:f2d.eEpoch, rEpoch: f2d.rEpoch, dInst:dInst};
             d2rFifo.enq(d2r);
         end
     endrule
@@ -189,8 +166,25 @@ module mkProc(Proc);
             d2rFifo.deq;
             $display("[RegFetch][Kill instruction,exeEpoch not eq]: PC = %x ", d2r.pc);
         end
+        else if(d2r.rEpoch != regEpoch) begin
+            d2rFifo.deq;
+            $display("[RegFetch][Kill instruction,regEpoch not eq]: PC = %x", d2r.pc);
+        end
         else begin
             if(!sb.search1(d2r.dInst.src1) && !sb.search2(d2r.dInst.src2)) begin
+                if(dInst.iType == Jr) begin
+                    let imm  = fromMaybe(?, dInst.imm);
+                    Addr jrPredPc  = {truncateLSB(rVal1 + imm), 1'b0};
+                    if(jrPredPc != predPc) begin
+                        $display("[RegFetch][Jr Mispredict]: PC = %x", d2r.pc);
+                        regRedirect[0] <= tagged Valid RegRedirect{pc:d2r.pc, nextPc:jrPredPc };
+                        predPc = jrPredPc;  //
+
+                    end
+                    else begin
+                        $display("[RegFetch][Jr right predict]: PC = %x", d2r.pc);
+                    end
+                end
                 let r2e = R2E{
                     pc     : d2r.pc    ,
                     ppc    : predPc    ,
@@ -210,6 +204,15 @@ module mkProc(Proc);
             end
         end
 
+        //if(!sb.search1(d2r.dInst.src1) && !sb.search2(d2r.dInst.src2)) begin
+        //    d2rFifo.deq;
+        //    r2eFifo.enq(r2e);
+        //    sb.insert(d2r.dInst.dst);
+        //    $display("[RegFetch]: PC = %x, insert sb = %x", d2r.pc, d2r.dInst.dst);
+        //end
+        //else begin
+        //    $display("[RegFetch]: Stalled, PC = %x, src1 = %x, src2 = %x", d2r.pc, d2r.dInst.src1, d2r.dInst.src2);
+        //end
     endrule
 
     rule doExecute(csrf.started);
@@ -293,6 +296,12 @@ module mkProc(Proc);
             btb.update(r.pc, r.nextPc); // train BTB
             $display("exeRedirect, redirected by Execute, oriPC: %x, truePC :%x",r.pc, r.nextPc);
         end
+        else if(regRedirect[1] matches tagged Valid .r) begin  
+            pcReg[1] <= r.nextPc;
+            regEpoch <= !regEpoch;      // flip epoch
+            btb.update(r.pc, r.nextPc); // TODO:  还需要训练吗?
+            $display("exeRedirect, redirected by RegFetch, oriPC: %x, truePC :%x",r.pc, r.nextPc);
+        end
         else if(decRedirect[1] matches tagged Valid .r) begin
             pcReg[1] <= r.nextPc;
             decEpoch <= !decEpoch;      // flip epoch
@@ -301,6 +310,7 @@ module mkProc(Proc);
         end
         // reset EHR
         exeRedirect[1] <= Invalid;
+        regRedirect[1] <= Invalid;
         decRedirect[1] <= Invalid;
     endrule
 
