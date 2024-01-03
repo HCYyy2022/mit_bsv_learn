@@ -31,13 +31,16 @@ module mkBtb( Btb#(indexSize) ) provisos( Add#(indexSize,a__,32), NumAlias#(TSub
     endmethod
 
     method Action update(Addr thisPc, Addr nextPc);
+        let index = getIndex(thisPc);
+        let tag = getTag(thisPc);
         if( nextPc != thisPc + 4 ) begin
-            let index = getIndex(thisPc);
-            let tag = getTag(thisPc);
             // update entry
             valid[index] <= True;
             tags[index] <= tag;
             targets[index] <= nextPc;
+        end
+        else if(tag == tags[index]) begin   //更新btb的时候，如果nextPc = thisPc + 4，同时之前该pc的预测是跳转的时候，删除该pc的预测   //asm测试没有效果
+            valid[index] <= False;
         end
     endmethod
 endmodule

@@ -64,6 +64,9 @@ typedef struct {
     Addr nextPc;
 } DecRedirect deriving (Bits, Eq);
 
+//btb只有在预测错误的时候进行训练
+//bht对所有Br类型的指令进行训练
+//bht预测在decode阶段，训练在excute阶段，因为大多数的情况中，循环中的跳转指令不是紧挨的,训练有几个周期的滞后也没有影响
 
 
 (* synthesize *)
@@ -115,9 +118,11 @@ module mkProc(Proc);
         else begin
             let dInst = decode(inst);
             let predPc = f2d.ppc;   // addrPredPc
-            if(dInst.iType == Br) begin
+            if(dInst.iType == Br || dInst.iType == J) begin
+            //if(dInst.iType == Br) begin
                 let dirPredPc  = f2d.pc + fromMaybe(?, dInst.imm);
-                let dirPredPc2 = bht.ppcDP(f2d.pc, dirPredPc); 
+                //let dirPredPc2 = bht.ppcDP(f2d.pc, dirPredPc); 
+                let dirPredPc2 = dInst.iType == Br ? bht.ppcDP(f2d.pc, dirPredPc) : dirPredPc;  //J型指令不使用bht,因为循环中较少使用J型指令,直接使用计算结果作为预测值
                 if(dirPredPc2 != predPc) begin
                     $display("[Decode][Br dir Mispredict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
                     decRedirect[0] <= tagged Valid DecRedirect{pc:f2d.pc, nextPc:dirPredPc2 };
@@ -175,7 +180,7 @@ module mkProc(Proc);
                 $fwrite(stderr, "[Execute] :ERROR, Executing unsupported instruction at pc: %x. Exiting\n", r2e.pc);
                 $finish;
             end
-            if(eInst.mispredict) begin //no btb update?
+            if(eInst.mispredict) begin 
                 $display("[Execute] : finds misprediction, PC = %x", r2e.pc);
                 exeRedirect[0] <= Valid (ExeRedirect { pc: r2e.pc, nextPc: eInst.addr });
             end
@@ -183,7 +188,8 @@ module mkProc(Proc);
                 $display("[Execute] : PC = %x", r2e.pc);
             end
             
-            if(eInst.iType == Br) begin
+            //if(eInst.iType == Br || eInst.iType == J) begin
+            if(eInst.iType == Br) begin   //所有B型指令都需要训练bht,只有在Excute阶段能拿到eInst.brTaken并对bht进行训练
                 bht.update(r2e.pc, eInst.brTaken);
                 $display("[Execute] Br Type inst,update bht : PC = %x", r2e.pc);
             end
@@ -244,7 +250,7 @@ module mkProc(Proc);
         else if(decRedirect[1] matches tagged Valid .r) begin
             pcReg[1] <= r.nextPc;
             decEpoch <= !decEpoch;      // flip epoch
-            btb.update(r.pc, r.nextPc); // train BTB
+            btb.update(r.pc, r.nextPc); // 当btb和bht预测的结果不一致的时候，对btb也进行更新
             $display("decRedirect, redirected by Decode, oriPC: %x, truePC :%x",r.pc, r.nextPc);
         end
         // reset EHR
