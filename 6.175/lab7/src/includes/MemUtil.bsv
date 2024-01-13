@@ -85,12 +85,12 @@ module mkWideMemFromDDR3(   Fifo#(2, DDR3_Req) ddr3ReqFifo,
                                 data:       pack(x.data)
                             };
         ddr3ReqFifo.enq( ddr3_req );
-        $display("mkWideMemFromDDR3::req : wideMemReq.addr = 0x%0x, ddr3Req.address = 0x%0x, ddr3Req.byteen = 0x%0x", x.addr, ddr3_req.address, ddr3_req.byteen);
+        //$display("mkWideMemFromDDR3::req : wideMemReq.addr = 0x%0x, ddr3Req.address = 0x%0x, ddr3Req.byteen = 0x%0x", x.addr, ddr3_req.address, ddr3_req.byteen);
     endmethod
     method ActionValue#(WideMemResp) resp;
         let x = ddr3RespFifo.first;
         ddr3RespFifo.deq;
-        $display("mkWideMemFromDDR3::resp : data = 0x%0x", x.data);
+        //$display("mkWideMemFromDDR3::resp : data = 0x%0x", x.data);
         return unpack(x.data);
     endmethod
 endmodule
@@ -137,8 +137,10 @@ module mkSplitWideMem(  Bool initDone, WideMem mem,
             (interface WideMem;
                 method Action req( WideMemReq x );
                     reqFifos[i].enq(x);
+                    //$display("[ddrMultiIf.req][%0x] , addr:%0x, write_en:%0x",i, x.addr, x.write_en );
                 endmethod
                 method ActionValue#(WideMemResp) resp;
+                    //$display("[ddrMultiIf.resp][%0x]",i);
                     let x = respFifos[i].first;
                     respFifos[i].deq;
                     return x;

@@ -1,28 +1,24 @@
-// Six stage
+// six stage bonus ex6
 
 import Types::*;
 import ProcTypes::*;
-import MemTypes::*;
+import CMemTypes::*;
+//import MemTypes::*;
 import MemInit::*;
 import RFile::*;
-import GetPut::*;
-import ClientServer::*;
-import Memory::*;
-import CacheTypes::*;
-import WideMemInit::*;
-import MemUtil::*;
-import Vector::*;
+import IMemory::*;
+import DMemory::*;
+import FPGAMemory::*;
 import Decode::*;
 import Exec::*;
 import CsrFile::*;
 import MyFifo::*;
-import FIFOF::*;
 import Ehr::*;
+import GetPut::*;
 import Btb::*;
 import Bht::*;
+import Ras::*;
 import Scoreboard::*;
-import Ras :: *;
-import Cache::*;
 
 
 typedef struct{
@@ -82,12 +78,12 @@ typedef struct {
 //ras放在decode阶段，通过ras，可以将ex5中RegFetch阶段的重定向前移到Decode阶段
 
 
-//(* synthesize *)
-module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo)(Proc);
+(* synthesize *)
+module mkProc(Proc);
     Ehr#(2, Addr)     pcReg      <- mkEhr(?);
     RFile             rf         <- mkRFile;
-    //FPGAMemory        iMem       <- mkFPGAMemory;
-    //FPGAMemory        dMem       <- mkFPGAMemory;
+    FPGAMemory        iMem       <- mkFPGAMemory;
+    FPGAMemory        dMem       <- mkFPGAMemory;
     CsrFile           csrf       <- mkCsrFile;
     Btb#(6)           btb        <- mkBtb; // 64-entry BTB
     DirectionPred#(8) bht        <- mkBHT; //256-entry BHT
@@ -100,11 +96,6 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
     Ehr#(2, Maybe#(ExeRedirect)) exeRedirect <- mkEhr(Invalid); //EHR for Excute redirection
     Ehr#(2, Maybe#(DecRedirect)) decRedirect <- mkEhr(Invalid); //EHR for Decode redirection
 
-    WideMem                 wideMemWrapper <- mkWideMemFromDDR3( ddr3ReqFifo, ddr3RespFifo );
-    Vector#(2, WideMem)     wideMems       <- mkSplitWideMem( csrf.started, wideMemWrapper );
-	Cache iMem <- mkTranslator(wideMems[1]);
-	Cache dMem <- mkTranslator(wideMems[0]);
-
     // FIFO between two stages
     Fifo#(2, F2D) f2dFifo <- mkCFFifo;
     Fifo#(2, D2R) d2rFifo <- mkCFFifo;
@@ -112,23 +103,7 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
     Fifo#(2, E2M) e2mFifo <- mkCFFifo;   
     Fifo#(2, M2W) m2wFifo <- mkCFFifo;
 
-    //Bool memReady = iMem.init.done && dMem.init.done;
-
-    // some garbage may get into ddr3RespFifo during soft reset
-    // this rule drains all such garbage
-    rule drainMemResponses( !csrf.started );
-        ddr3RespFifo.deq;
-    endrule
-    
-    //NOTE:  阻塞定位使用
-    //由于第一次使用的Cache.bsv存在问题, 使用rule fifoFullDisplay定位阻塞在哪里
-    //rule fifoFullDisplay(csrf.started);
-    //    $display("[fifoDisplay] f2dFifo empty: %0x; full: %0x", !f2dFifo.notEmpty, !f2dFifo.notFull);
-    //    $display("[fifoDisplay] d2rFifo empty: %0x; full: %0x", !d2rFifo.notEmpty, !d2rFifo.notFull);
-    //    $display("[fifoDisplay] r2eFifo empty: %0x; full: %0x", !r2eFifo.notEmpty, !r2eFifo.notFull);
-    //    $display("[fifoDisplay] e2mFifo empty: %0x; full: %0x", !e2mFifo.notEmpty, !e2mFifo.notFull);
-    //    $display("[fifoDisplay] m2wFifo empty: %0x; full: %0x", !m2wFifo.notEmpty, !m2wFifo.notFull);
-    //endrule
+    Bool memReady = iMem.init.done && dMem.init.done;
     
     rule doFetch(csrf.started);
         iMem.req(MemReq{op:Ld, addr:pcReg[0], data:?});
@@ -208,13 +183,6 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
         let csrVal = csrf.rd(fromMaybe(?, d2r.dInst.csr));
         let dInst  = d2r.dInst;
         let predPc = d2r.ppc;
-
-        let dst   = fromMaybe(?, dInst.dst);
-        let src1  = fromMaybe(?, dInst.src1);
-        let src2  = fromMaybe(?, dInst.src2);
-        let dstValid = isValid(dInst.dst);
-        let src1Valid = isValid(dInst.src1);
-        let src2Valid = isValid(dInst.src2);
         
 
         if(d2r.eEpoch != exeEpoch) begin
@@ -235,10 +203,10 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
                 d2rFifo.deq;
                 r2eFifo.enq(r2e);
                 sb.insert(d2r.dInst.dst);
-                $display("[RegFetch]: PC = %x, insert sb = %x, dstValid: %x", d2r.pc, dst, dstValid);
+                $display("[RegFetch]: PC = %x, insert sb = %x", d2r.pc, d2r.dInst.dst);
             end
             else begin
-                $display("[RegFetch]: Stalled, PC = %x, src1 = %x (%x), src2 = %x (%x)", d2r.pc, src1, src1Valid, src2, src2Valid);
+                $display("[RegFetch]: Stalled, PC = %x, src1 = %x, src2 = %x", d2r.pc, d2r.dInst.src1, d2r.dInst.src2);
             end
         end
 
@@ -341,12 +309,12 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
         return ret;
     endmethod
 
-    method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started && !ddr3RespFifo.notEmpty );
+    method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started && memReady );
         $display("Start cpu");
         csrf.start(0); // only 1 core, id = 0
         pcReg[0] <= startpc;
     endmethod
 
-    //interface iMemInit = iMem.init;
-    //interface dMemInit = dMem.init;
+    interface iMemInit = iMem.init;
+    interface dMemInit = dMem.init;
 endmodule

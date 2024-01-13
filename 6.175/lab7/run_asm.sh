@@ -19,6 +19,7 @@ asm_tests=(
 	sub
 	xor xori
 	bpred_bht bpred_j bpred_ras bpred_j_noloop
+	bpred_j_noloop
 	cache
 	)
 
