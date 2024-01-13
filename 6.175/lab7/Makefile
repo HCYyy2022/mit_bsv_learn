@@ -36,3 +36,6 @@ no_cc:
 	mkdir -p buildDir
 	bsc -u -sim -show-schedule -sched-dot -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -aggressive-conditions -keep-fires src/WithoutCache.bsv
 #	 bsc -sim -e mkProc -bdir buildDir -info-dir buildDir -simdir buildDir -o buildDir/simProc 
+with_cc:
+	mkdir -p buildDir
+	bsc -u -sim -show-schedule -sched-dot -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -aggressive-conditions -keep-fires src/WithCache.bsv

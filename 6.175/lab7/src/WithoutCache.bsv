@@ -1,4 +1,4 @@
-// Six stage
+// WithoutCache
 
 import Types::*;
 import ProcTypes::*;
