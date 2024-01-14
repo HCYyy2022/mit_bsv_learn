@@ -4,6 +4,8 @@ import MemTypes::*;
 import MemUtil::*;
 import Vector::*;
 import Types::*;
+import CompletionBuffer :: * ;
+import GetPut::*;
 
 
 //module mkTranslator(WideMem backend, Cache ifc);
@@ -93,13 +95,13 @@ module mkCache(WideMem wideMem, Cache ifc);
         tagArray[idx] <= tagged Valid tag;
 
         if(missReq.op == Ld) begin 
-        	dirtyArray[idx] <= False;
-        	dataArray [idx] <= data;
-        	hitQ.enq(data[wOffset]); 
+            dirtyArray[idx] <= False;
+            dataArray [idx] <= data;
+            hitQ.enq(data[wOffset]); 
         end else begin
             dirtyArray[idx] <= True;
-        	data[wOffset]  = missReq.data; 
-        	dataArray[idx] <= data;
+            data[wOffset]  = missReq.data; 
+            dataArray[idx] <= data;
         end     
         
         status <= Ready;
@@ -132,4 +134,120 @@ module mkCache(WideMem wideMem, Cache ifc);
         hitQ.deq;
         return hitQ.first;
     endmethod
+endmodule
+
+
+
+
+
+
+module mkNBCache(WideMem wideMem, Cache ifc);
+    Vector#(CacheRows, Reg#(CacheLine))            dataArray  <- replicateM(mkRegU);
+    Vector#(CacheRows, Reg#(Maybe#(CacheTag)))     tagArray   <- replicateM(mkReg(tagged Invalid));
+    Vector#(CacheRows, Reg#(Bool))                 dirtyArray <- replicateM(mkReg(False));
+    CompletionBuffer #(16, Data)                   cb         <- mkCompletionBuffer;
+    Fifo#(8,Tuple2#(Token, MemReq))                fillQ      <- mkCFFifo;   //存放未命中的请求，打上token,进行保序
+
+    Vector#(2, Fifo#(2, Tuple2#(Token, Data)))     completeFifos <- replicateM(mkCFFifo);
+
+    Reg#(Bool)                                     statuReg    <- mkReg(True);
+    Reg#(MemReq)                                   missReqReg  <- mkRegU;
+    Reg#(Token)                                    tokenReg    <- mkRegU;
+
+    function CacheIndex      getIndex (Addr addr) = truncate(addr >> 6) ;     //CacheWordSelect(4位) + 4字节unit（2位）, log2(16*32/8) = 6
+    function CacheWordSelect getOffset(Addr addr) = truncate(addr >> 2) ;     //Data是32位，4字节unit，因此右移两位, log2(32/8) = 2
+    function CacheTag        getTag   (Addr addr) = truncateLSB(addr)   ;
+    
+
+    rule notHitReqProc(statuReg == False);
+        statuReg <= True;
+        fillQ.enq(tuple2(tokenReg, missReqReg));  
+
+        WideMemReq wideMemReq = toWideMemReq(missReqReg);
+        wideMemReq.write_en = 0;
+        wideMem.req(wideMemReq);
+    endrule
+    
+    //(* descending_urgency = "doMemory, req" *)
+    rule fill;
+        fillQ.deq();
+        let data    <- wideMem.resp;
+
+        match {.token, .req} = fillQ.first;
+        let idx     = getIndex (req.addr); 
+        let tag     = getTag   (req.addr);
+        let wOffset = getOffset(req.addr);
+
+        if(req.op == Ld) begin   //not hit read 
+            dirtyArray[idx] <= False;
+            dataArray [idx] <= data;
+            //hitQ.enq(data[wOffset]); 
+            //cb.complete.put( tuple2(token, data[wOffset]) );
+            completeFifos[0].enq( tuple2(token, data[wOffset]) );
+        end else begin          //not hit write
+            dirtyArray[idx] <= True;
+            data[wOffset]  = req.data; 
+            dataArray[idx] <= data;
+        end     
+    endrule
+    
+    rule completeProc;
+        if(completeFifos[0].notEmpty) begin
+            completeFifos[0].deq();
+            let cmpl = completeFifos[0].first();
+            cb.complete.put( cmpl );
+        end
+        else if(completeFifos[1].notEmpty) begin
+            let cmpl = completeFifos[1].first();
+            cb.complete.put( cmpl );
+        end
+    endrule
+    
+
+    method Action req(MemReq r) if(statuReg == True);
+        let idx     = getIndex (r.addr); 
+        let tag     = getTag   (r.addr);
+        let wOffset = getOffset(r.addr);
+        let dirty   = dirtyArray[idx];
+        let currTag = tagArray  [idx]; 
+        let hit     = isValid(currTag) ? fromMaybe(?, currTag) == tag : False;
+
+        Token token = 0;
+        if ( r.op == Ld ) begin   //hit read
+            token <- cb.reserve.get;
+        end
+        
+        if(hit) begin
+            let cacheLine = dataArray[idx];
+            if ( r.op == Ld ) begin   //hit read
+                //hitQ.enq(cacheLine[wOffset]);
+                //cb.complete.put( tuple2(token, cacheLine[wOffset]) );
+                completeFifos[1].enq( tuple2(token, cacheLine[wOffset]) );
+            end
+            else begin               //hit write
+                cacheLine [wOffset] = r.data;
+                dataArray [idx]    <= cacheLine;
+                dirtyArray[idx]    <= True;
+            end
+        end
+        else begin     //该状态可能需要处理脏页，因此非命中的请求在下一个状态处理
+            statuReg    <= False;
+            tokenReg    <= token;
+            missReqReg  <= r;
+            //fillQ.enq(tuple2(token, r));   //无论读写都在后一个状态处理，因为这里可能需要处理脏页
+            if (isValid(currTag) && dirty) begin
+                let addr = {fromMaybe(?, currTag), idx, 6'b0}; 
+                let data = dataArray[idx];
+                wideMem.req(WideMemReq {write_en: '1, addr: addr, data: data});   //'1表示全1扩展
+            end
+        end
+    endmethod
+
+    method ActionValue#(Data) resp;
+        //hitQ.deq;
+        //return hitQ.first;
+        let d <- cb.drain.get();
+        return d;
+    endmethod
+
 endmodule

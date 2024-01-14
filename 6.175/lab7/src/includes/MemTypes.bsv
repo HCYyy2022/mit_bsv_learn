@@ -68,3 +68,6 @@ interface WideMemInitIfc;
     method Bool done();
 endinterface
 
+typedef 16 NumTokens;
+typedef Bit#(TLog#(NumTokens)) Token;
+
