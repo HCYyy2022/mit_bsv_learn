@@ -137,10 +137,10 @@ module mkSplitWideMem(  Bool initDone, WideMem mem,
             (interface WideMem;
                 method Action req( WideMemReq x );
                     reqFifos[i].enq(x);
-                    //$display("[ddrMultiIf.req][%0x] , addr:%0x, write_en:%0x",i, x.addr, x.write_en );
+                    $display("[ddrMultiIf.req][%0x] , addr:%0x, write_en:%0x",i, x.addr, x.write_en );
                 endmethod
                 method ActionValue#(WideMemResp) resp;
-                    //$display("[ddrMultiIf.resp][%0x]",i);
+                    $display("[ddrMultiIf.resp][%0x]",i);
                     let x = respFifos[i].first;
                     respFifos[i].deq;
                     return x;

@@ -141,7 +141,7 @@ endmodule
 
 
 
-module mkNBCache(WideMem wideMem, Cache ifc);
+module mkNBCache(WideMem wideMem, int id, Cache ifc);
     Vector#(CacheRows, Reg#(CacheLine))            dataArray  <- replicateM(mkRegU);
     Vector#(CacheRows, Reg#(Maybe#(CacheTag)))     tagArray   <- replicateM(mkReg(tagged Invalid));
     Vector#(CacheRows, Reg#(Bool))                 dirtyArray <- replicateM(mkReg(False));
@@ -166,10 +166,11 @@ module mkNBCache(WideMem wideMem, Cache ifc);
         WideMemReq wideMemReq = toWideMemReq(missReqReg);
         wideMemReq.write_en = 0;
         wideMem.req(wideMemReq);
+        $display("[notHitReqProc_rule][%0x]-process not hit req, token:%0x, op:%0x,: addr:%0x ",id , tokenReg, missReqReg.op, missReqReg.addr);
     endrule
     
     //(* descending_urgency = "doMemory, req" *)
-    rule fill;
+    rule notHitRespProc;
         fillQ.deq();
         let data    <- wideMem.resp;
 
@@ -184,10 +185,12 @@ module mkNBCache(WideMem wideMem, Cache ifc);
             //hitQ.enq(data[wOffset]); 
             //cb.complete.put( tuple2(token, data[wOffset]) );
             completeFifos[0].enq( tuple2(token, data[wOffset]) );
+            $display("[notHitRespProc_rule][%0x]-receive not_hit_ld_resp, token:%0x, idx:%0x, tag:%0x, offset:%0x ",id, token, idx, tag, wOffset);
         end else begin          //not hit write
             dirtyArray[idx] <= True;
             data[wOffset]  = req.data; 
             dataArray[idx] <= data;
+            $display("[notHitRespProc_rule][%0x]-receive not_hit_st_resp, token:%0x, idx:%0x, tag:%0x, offset:%0x ",id, token, idx, tag, wOffset);
         end     
     endrule
     
@@ -196,10 +199,14 @@ module mkNBCache(WideMem wideMem, Cache ifc);
             completeFifos[0].deq();
             let cmpl = completeFifos[0].first();
             cb.complete.put( cmpl );
+            match {.token, .data}  = cmpl;
+            $display("[completeProc_rule][%0x]-process not_hit_ld_cmpl, token:%0x, data:%0x ",id, token, data);
         end
         else if(completeFifos[1].notEmpty) begin
             let cmpl = completeFifos[1].first();
             cb.complete.put( cmpl );
+            match {.token, .data}  = cmpl;
+            $display("[completeProc_rule][%0x]-process hit_ld_cmpl, token:%0x, data:%0x ",id, token, data);
         end
     endrule
     
@@ -223,8 +230,10 @@ module mkNBCache(WideMem wideMem, Cache ifc);
                 //hitQ.enq(cacheLine[wOffset]);
                 //cb.complete.put( tuple2(token, cacheLine[wOffset]) );
                 completeFifos[1].enq( tuple2(token, cacheLine[wOffset]) );
+                $display("[req_method][%0x]-receive a hit_Ld req, r.addr:%0x, idx:%0x, tag:%0x, offset:%0x, token:%0x",id ,r.addr, idx, tag, wOffset, token);
             end
             else begin               //hit write
+                $display("[req_method][%0x]-receive a hit_St req, r.addr:%0x, idx:%0x, tag:%0x, offset:%0x, token:%0x",id, r.addr, idx, tag, wOffset, token);
                 cacheLine [wOffset] = r.data;
                 dataArray [idx]    <= cacheLine;
                 dirtyArray[idx]    <= True;
@@ -239,6 +248,10 @@ module mkNBCache(WideMem wideMem, Cache ifc);
                 let addr = {fromMaybe(?, currTag), idx, 6'b0}; 
                 let data = dataArray[idx];
                 wideMem.req(WideMemReq {write_en: '1, addr: addr, data: data});   //'1表示全1扩展
+                $display("[req_method][%0x]-receive a notHit_with_dirty req, op:%0x, r.addr:%0x, idx:%0x, tag:%0x, offset:%0x, token:%0x",id, r.op, r.addr, idx, tag, wOffset, token);
+            end
+            else begin
+                $display("[req_method][%0x]-receive a notHit_no_dirty req, op:%0x, r.addr:%0x, idx:%0x, tag:%0x, offset:%0x, token:%0x",id, r.op, r.addr, idx, tag, wOffset, token);
             end
         end
     endmethod
@@ -247,6 +260,7 @@ module mkNBCache(WideMem wideMem, Cache ifc);
         //hitQ.deq;
         //return hitQ.first;
         let d <- cb.drain.get();
+        $display("[NBCache_resp_method][%0x]- data:%0x ", d);
         return d;
     endmethod
 
