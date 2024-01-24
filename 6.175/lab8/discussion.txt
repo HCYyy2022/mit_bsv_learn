@@ -1,0 +1,19 @@
+//****************************************************************************************************************//
+//* Discussion Question 1 (10 Points): In the spirit of the upcoming Thanksgiving holiday, list some reasons you are
+ thankful you only have to do this lab on a one-cycle processor. To get you started: what new hazards would exceptions
+ introduce if you were working on a pipelined implementation?
+//****************************************************************************************************************//
+1 Exceptions can be raised at various points in the pipeline.
+
+2 A single instruction can raise multiple exceptions as it passes through each pipeline stage
+
+3 Precise exception handling: To maintain program correctness, the processor needs to handle exceptions precisely.
+This means that when reporting an exception, the processor's state must reflect that all instructions before the 
+exception have completed, and that subsequent instructions have not been affected. In a multi-level pipeline, this
+requires complex logic to track and recover the pipeline's state
+
+
+//****************************************************************************************************************//
+//* Discussion Question 2 (Optional): How long did it take for you to finish this lab?
+//****************************************************************************************************************//
+5h
