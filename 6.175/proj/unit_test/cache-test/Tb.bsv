@@ -199,13 +199,13 @@ module mkTb(Empty);
 		getResp(999);
 
 		$display("  Found correct data, requesting store to cache");
-		reqSt(address(0,1,1), 111, 6);
+		reqSt(address(0,1,1), 111, 6);    //从S升级到M
 		$display("  Sending dwongrade to I request to cache");
-		p2c.enq_req( p2c_downgradeToY( address(0,1,0), I ) );
+		p2c.enq_req( p2c_downgradeToY( address(0,1,0), I ) );   //降级到I    //TODO:  这两个的次序会有影响的吗
 		$display("  Looking for downgrade response");
-		dequeue( tagged Resp c2p_downgradeToY(address(0,1,0), I, Invalid) );
+		dequeue( tagged Resp c2p_downgradeToY(address(0,1,0), I, Invalid) );   //检查降级到I响应
 		$display("  Found downgrade to I respondse, looking for upgrade request");
-		dequeue( tagged Req c2p_upgradeToY( address(0,1,0), M ) );
+		dequeue( tagged Req c2p_upgradeToY( address(0,1,0), M ) );    //检查升级到M请求
 		$display("  Found upgrade to M request, sending upgrade to M response");
 		p2c.enq_resp( p2c_upgradeToY( address(0,1,0), M, tagged Valid unpack({0, 32'd666, 32'd777, 32'd888}) ) );
 		delay(10); // wait for store to perform
@@ -229,9 +229,9 @@ module mkTb(Empty);
 		getResp( 77 );
 
 		$display("  Found correct data, requesting store to cache line (1,2), evicting (0,2) first");
-		reqSt( address(1,2,1), 88, 8 );
+		reqSt( address(1,2,1), 88, 8 );   //此次st为命中,且当前状态不是I，因此需要先降级到I
 		$display("  Looking for downgrade response");
-		dequeue( tagged Resp c2p_downgradeToY( address(0,2,0), I, Invalid ) );
+		dequeue( tagged Resp c2p_downgradeToY( address(0,2,0), I, Invalid ) );  //检查降级到I
 		$display("  Cache send downgrade to I response, sending downgrade request to cache again, cache should ignore it");
 		p2c.enq_req( p2c_downgradeToY( address(0,2,0), I ) );
 		$display("  Make sure the cache didn't send another response");
@@ -243,16 +243,16 @@ module mkTb(Empty);
 			end
 		endaction
 		$display("  No downgrade response sent, looking for upgrade request");
-		dequeue( tagged Req c2p_upgradeToY( address(1,2,0), M ) );
+		dequeue( tagged Req c2p_upgradeToY( address(1,2,0), M ) );   //cache降级为I之后会请求升级到M, 检查升级到了M
 		$display("  Found upgrade to M request, sending upgrade to M response");
 		p2c.enq_resp( p2c_upgradeToY( address(1,2,0), M, tagged Valid unpack({0, 32'd66}) ) );
 		
 		$display("  Requesting store to cache line (2,2), evicting (1,2) first");
-		reqLd( address(2,2,2), 9 );
+		reqLd( address(2,2,2), 9 );  //未命中的ld
 		$display("  Looking for downgrade response");
-		dequeue( tagged Resp c2p_downgradeToY( address(1,2,0), I, tagged Valid unpack({0, 32'd88, 32'd66}) ) );
+		dequeue( tagged Resp c2p_downgradeToY( address(1,2,0), I, tagged Valid unpack({0, 32'd88, 32'd66}) ) );  //老地址降级到I, 随后会请求升级到S
 		$display("  Cache send downgrade to I response, sending downgrade request to cache again, cache should ignore it");
-		p2c.enq_req( p2c_downgradeToY( address(1,2,0), I ) );
+		p2c.enq_req( p2c_downgradeToY( address(1,2,0), I ) );     //再次要求老地址降级到I, 不会有任何事发生，因为之前已经降级过了
 		$display("  Make sure the cache didn't send another response");
 		delay(10);
 		action
@@ -262,7 +262,7 @@ module mkTb(Empty);
 			end
 		endaction
 		$display("  No downgrade response sent, looking for upgrade request");
-		dequeue( tagged Req c2p_upgradeToY( address(2,2,0), S ) );
+		dequeue( tagged Req c2p_upgradeToY( address(2,2,0), S ) );  //请求升级到S
 		$display("  Found upgrade to S request, send upgrade to S response to cache");
 		p2c.enq_resp( p2c_upgradeToY( address(2,2,0), S, tagged Valid unpack({0, 32'd99, 32'd0, 32'd0}) ) );
 		$display("  Looking for response for load");
