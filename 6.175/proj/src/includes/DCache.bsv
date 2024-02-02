@@ -8,11 +8,13 @@ import MemTypes::*;
 
 typedef enum{Ready, ActiveDowngrade, ActiveUpgrade, WaitUpgradeResp} CacheStatus deriving(Eq, Bits);
 //Ready           :  处于Ready才能接收core的 req
-//ActiveDowngrade :  当未命中且line不处于I状态的时候，需要先主动降级（事件通知， 数据回写）
+//ActiveDowngrade :  当未命中且line不处于I状态的时候，需要先主动降级（事件通知， 数据回写(如果有)） ,主动降级是一个resp，不会收到ppp回复的resp
 //ActiveUpgrade   :  未命中降级之后需要升级;  命中但是当前级别不够也需要主动升级(事件通知，读出数据)
 //WaitUpgradeResp :  当发送主动升级命令之后，需要等待响应
 
 //doPassiveDowngrade rule不在状态机中，并且和doWaitUpgradeResp rule互斥
+
+//并非所有passive的降级req都会回复resp，只有降级发生的时候，会回复resp,但实际上PPP发送过来的降级req一定是判断到需要降级的
 
 
 

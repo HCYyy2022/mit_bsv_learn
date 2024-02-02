@@ -183,17 +183,17 @@ module mkTb(Empty);
 
 		// Test 1: core 0 upgrade to S, upgrade to M, downgrade to S, downgrade to I
 		checkpoint(0);
-		toParent.enq_req( c2p_upgradeToY(0, S) );
-		dequeue( tagged Resp p2c_upgradeToY(0, S, Valid (unpack(0))) );
+		toParent.enq_req( c2p_upgradeToY(0, S) );                         //core0 请求升级到S(一个读请求)
+		dequeue( tagged Resp p2c_upgradeToY(0, S, Valid (unpack(0))) );   //ppp回复msg,msg中包含读返回的数据
 		checkpoint(1);
-		toParent.enq_req( c2p_upgradeToY(0, M) );
-		dequeue( tagged Resp p2c_upgradeToY(0, M, Invalid) );
+		toParent.enq_req( c2p_upgradeToY(0, M) );                         //core 0 请求升级到M(一个写请求)
+		dequeue( tagged Resp p2c_upgradeToY(0, M, Invalid) );             //ppp回复请求(因为是S到M的请求，cache中存在数据备份，因此ppp的resp不包含数据)
 		checkpoint(2);
 		// This will write 17 to main memory
-		toParent.enq_resp( c2p_downgradeToY(0, S, Valid (unpack(17))) );
+		toParent.enq_resp( c2p_downgradeToY(0, S, Valid (unpack(17))) );  //core 0 resp降级到S (当发生未命中时，会发生降级，这是如果有脏页（之前处于M状态），则会从M降级到S)
 		checkpoint(3);
 		// This should not write to main memory
-		toParent.enq_resp( c2p_downgradeToY(0, I, Invalid) );
+		toParent.enq_resp( c2p_downgradeToY(0, I, Invalid) );             //core 0 resp降级到I
 
 		// Current state:
 		//  Core 0: I
@@ -202,9 +202,9 @@ module mkTb(Empty);
 
 		// Test 2: core 1 upgrade to M, check data from previous downgrade responses
 		checkpoint(4);
-		toParent.enq_req( c2p_upgradeToY(1, M) );
+		toParent.enq_req( c2p_upgradeToY(1, M) );                         //core 1 请求升级到M(一个写请求)
 		// Make sure the data in the upgrade response is 17
-		dequeue( tagged Resp p2c_upgradeToY(1, M, Valid (unpack(17))) );
+		dequeue( tagged Resp p2c_upgradeToY(1, M, Valid (unpack(17))) );  //ppp resp 请求（因为是I到M的请求，之前的cache中没有包含数据, 因此resp中包含数据）  //TODO: 如果之前core0不处于I状态， ppp还需要给core0 提出一个降级resp
 
 		// Current state:
 		//  Core 0: I
@@ -213,14 +213,14 @@ module mkTb(Empty);
 
 		// Test 3: core 0 upgrade to S while other core is in M
 		checkpoint(5);
-		toParent.enq_req( c2p_upgradeToY(0, S) );
+		toParent.enq_req( c2p_upgradeToY(0, S) );                         //core 0 请求升级到S(I-->S), 读请求
 		// cache 1 is in M, so it will need to downgrade
-		dequeue( tagged Req p2c_downgradeToY(1, S) );
+		dequeue( tagged Req p2c_downgradeToY(1, S) );                     //ppp resp core1, 告知降级到S(M-->S)
 		checkpoint(6);
 		// 22 will get written to main memory
-		toParent.enq_resp( c2p_downgradeToY(1, S, Valid (unpack(22))) );
+		toParent.enq_resp( c2p_downgradeToY(1, S, Valid (unpack(22))) );   //core1 收到M到S的降级请求之后， resp ppp(带有core1中修改的数据, 从17修改到22)
 		// now cache 0 can get upgraded to Y
-		dequeue( tagged Resp p2c_upgradeToY(0, S, Valid (unpack(22))) );
+		dequeue( tagged Resp p2c_upgradeToY(0, S, Valid (unpack(22))) );   //ppp收到 core1的resp之后，会继续处理core0的升级请求(I-->S的读请求)，resp core0(带读返回的数据)
 
 		// Current state:
 		//  Core 0: S
@@ -229,11 +229,11 @@ module mkTb(Empty);
 		
 		// Test 4: core 0 upgrade S to M
 		checkpoint(7);
-		toParent.enq_req( c2p_upgradeToY(0, M) );
-		dequeue( tagged Req p2c_downgradeToY(1, I) );
+		toParent.enq_req( c2p_upgradeToY(0, M) );                           //core 0 请求从S升级到M(写请求)
+		dequeue( tagged Req p2c_downgradeToY(1, I) );                       //ppp 请求core1 降级到I
 		checkpoint(8);
-		toParent.enq_resp( c2p_downgradeToY(1, I, Invalid) );
-		dequeue( tagged Resp p2c_upgradeToY(0, M, Invalid) );
+		toParent.enq_resp( c2p_downgradeToY(1, I, Invalid) );               //core 1 resp 已经从S降级到I
+		dequeue( tagged Resp p2c_upgradeToY(0, M, Invalid) );               //core接收到core1的resp之后，继续处理core0的升级请求，resp core0从S升级到M
 
 		// Current state:
 		//  Core 0: M
@@ -243,7 +243,7 @@ module mkTb(Empty);
 		// Test 5: voluntary downgrade
 		checkpoint(9);
 		// 200 will get written to main memory
-		toParent.enq_resp( c2p_downgradeToY(0, I, Valid (unpack(200))) );
+		toParent.enq_resp( c2p_downgradeToY(0, I, Valid (unpack(200))) );             ///core0 resp从M降级到I(未命中之后的回写请求)
 
 		// Current state:
 		//  Core 0: I
@@ -252,8 +252,8 @@ module mkTb(Empty);
 
 		// Test 6: both upgrade to S
 		checkpoint(10);
-		toParent.enq_req( c2p_upgradeToY(0, S) );
-		toParent.enq_req( c2p_upgradeToY(1, S) );
+		toParent.enq_req( c2p_upgradeToY(0, S) );     //core0 req 从I升级到S
+		toParent.enq_req( c2p_upgradeToY(1, S) );     //core1 req 从I升级到S
 		checkpoint(11);
 		// in a more complicated implementation, these two could be reordered
 		seq
@@ -265,7 +265,7 @@ module mkTb(Empty);
 				y <= fromParent.first;
 				fromParent.deq;
 			endaction
-			action
+			action                                    //判断ppp resp core0和core1的结果是否相同
 				CacheMemMessage m0 = Resp (p2c_upgradeToY(0, S, Valid (unpack(200))));
 				CacheMemMessage m1 = Resp (p2c_upgradeToY(1, S, Valid (unpack(200))));
 				if(msgEq(x, m0) && msgEq(y, m1) || msgEq(x, m1) && msgEq(y, m0)) begin
