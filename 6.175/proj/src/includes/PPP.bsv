@@ -25,7 +25,7 @@ typedef enum {
 
 module mkPPP(MessageGet c2m, MessagePut m2c, WideMem mem, Empty ifc);
 
-    Bool  needDebugPrint = True;
+    Bool  needDebugPrint = False;
     Fmt   printPrefix = $format("[ppp debug]");
 
     Vector#(CoreNum, Vector#(CacheRows, Reg#(CacheLineInfo))) cli <- replicateM( replicateM(mkReg(CacheLineInfo{msi: I, tag:?})));

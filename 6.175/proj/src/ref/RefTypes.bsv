@@ -6,6 +6,7 @@ import GetPut::*;
 import Vector::*;
 
 // imported C function to handle monolithic memory
+//BDPI（Big Data Persistent Identifier）
 import "BDPI" function ActionValue#(Bit#(64)) c_createMem(Bit#(32) addrWidth);
 import "BDPI" function ActionValue#(Data) c_readMem(Bit#(64) memPtr, Bit#(32) wordAddr);
 import "BDPI" function Action c_writeMem(Bit#(64) memPtr, Bit#(32) wordAddr, Data d);

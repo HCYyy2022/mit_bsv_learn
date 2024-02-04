@@ -56,6 +56,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
             if (r.op == Ld) begin
                 if (msiArray[idx] > I) begin
                     respQ.enq(dataArray[idx][sel]);
+                    refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid dataArray[idx][sel]);
                     //$display("[DCache debug] - ld op is hit and msi is in %2d, return data resp", msiArray[idx]);
                 end
                 else 
@@ -66,6 +67,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
                     let oldLine    = dataArray[idx];
                     oldLine  [sel]   = r.data;
                     dataArray[idx]  <= oldLine;
+                    refDMem.commit(r, tagged Valid dataArray[idx], tagged Invalid);
                 end
                 else 
                     cacheState <= ActiveUpgrade;
@@ -83,7 +85,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         end
     endrule
         
-    rule doActiveDowngrade(cacheState == ActiveDowngrade);  //当发生为命中且不在I状态的时候，需要先进行主动降级
+    rule doActiveDowngrade(cacheState == ActiveDowngrade);  //当发生为不命中且不在I状态的时候，需要先进行主动降级
         let sel  = getWordSelect(missReq.addr);
         let idx  = getIndex     (missReq.addr);
         let tag  = getTag       (missReq.addr);
@@ -111,10 +113,14 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         let tag     = getTag       (missReq.addr);
         let newLine = isValid(resp.data) ? fromMaybe(?, resp.data) : dataArray[idx];
 
-        if (missReq.op == Ld) 
+        if (missReq.op == Ld)  begin
             respQ.enq(newLine[sel]);
-        else if (missReq.op == St) 
+            refDMem.commit(missReq, tagged Valid newLine, tagged Valid newLine[sel]);
+        end
+        else if (missReq.op == St)  begin
+            refDMem.commit(missReq, tagged Valid newLine, tagged Invalid);
             newLine[sel] = missReq.data;
+        end
         dataArray[idx] <= newLine   ;
         tagArray [idx] <= tag       ;
         msiArray [idx] <= resp.state;
@@ -139,7 +145,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
 
     method Action req(MemReq r);
         reqQ.enq(r);
-        //refDMem.issue(r);
+        refDMem.issue(r);
     endmethod
 
 

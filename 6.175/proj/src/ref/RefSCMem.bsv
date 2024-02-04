@@ -20,7 +20,7 @@ module mkRefSCMem(RefMem);
 	Vector#(CoreNum, Ehr#(CoreNum, Maybe#(CacheLineAddr))) link <- replicateM(mkEhr(Invalid));
 	
 	// bypass FIFO of mem ops: allow issue & commit of same op at one cycle
-	Vector#(CoreNum, Fifo#(MaxReqNum, MemReq)) reqQ <- replicateM(mkBypassFifo);
+	Vector#(CoreNum, Fifo#(MaxReqNum, MemReq)) reqQ <- replicateM(mkBypassFifo);   //MaxReqNum:8
 	
 	// EHRs for req
 	Vector#(CoreNum, Ehr#(2, Maybe#(RefFetchReq)))   fetchEn <- replicateM(mkEhr(Invalid));
