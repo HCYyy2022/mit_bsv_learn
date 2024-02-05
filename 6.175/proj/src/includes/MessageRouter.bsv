@@ -80,11 +80,11 @@ module mkMessageRouter(
         
         if(haveC2RResp) begin 
             lastRespProcIdx <= respIdx;
-            debugInfoPrint(needDebugPrint, printPrefix, $format("[haveC2RResp], current respIdx :%4h, next respIdx: %4h  ",lastRespProcIdx, respIdx ) );
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[haveC2RResp], current respIdx :%4b, next respIdx: %4b  ",lastRespProcIdx, respIdx ) );
         end
         if(haveC2RReq) begin
             lastReqProcIdx  <= reqIdx;
-            debugInfoPrint(needDebugPrint, printPrefix, $format("[haveC2RReq],  current reqIdx :%4h, next reqIdx: %4h  ",lastReqProcIdx, reqIdx ) );
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[haveC2RReq],  current reqIdx :%4b, next reqIdx: %4b  ",lastReqProcIdx, reqIdx ) );
         end
         
         if(haveM2RResp) begin

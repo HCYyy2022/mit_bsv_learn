@@ -15,7 +15,7 @@ import ClientServer::*;
 import GetPut::*;
 
 interface ConnectalWrapper;
-   interface ConnectalProcRequest connectProc;
+  interface ConnectalProcRequest connectProc;
   interface ConnectalMemoryInitialization initProc;
 endinterface
 

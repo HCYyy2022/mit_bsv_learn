@@ -28,7 +28,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
     Fifo#(2, MemReq )    reqQ  <- mkPipelineFifo;
     Fifo#(2, MemResp)    respQ <- mkBypassFifo  ;
     
-    Bool  needDebugPrint = False;
+    Bool  needDebugPrint = True;
     Fmt   prefix = $format("[DCache(%2d) debug]", id);
 
     function Action  debugInfoPrint(Bool needPrint,Fmt prefix, Fmt info);
@@ -51,16 +51,18 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         missReq  <= r;
         
         //$display("[DCache debug] - hit: %1d, msiState: %2d", hit, msiArray[idx]);
-        debugInfoPrint(needDebugPrint, prefix, $format(" [doReq rule], hit: %1d, msiState: ", hit, fshow(msiArray[idx])) );
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]: msi= %1d, curReq=", msiArray[idx] ,fshow(r)));
         if(hit) begin
             if (r.op == Ld) begin
                 if (msiArray[idx] > I) begin
                     respQ.enq(dataArray[idx][sel]);
                     refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid dataArray[idx][sel]);
-                    //$display("[DCache debug] - ld op is hit and msi is in %2d, return data resp", msiArray[idx]);
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule][Ld_hit], resp_data=%8h, msi=",dataArray[idx][sel] ,fshow(msiArray[idx])));
                 end
-                else 
+                else begin
                     cacheState <= ActiveUpgrade;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Ld_hit_in_I (not hit, will do ActiveUpgrade)"));
+                end
             end
             else if(r.op == St) begin
                 if (msiArray[idx] == M) begin
@@ -68,9 +70,12 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
                     oldLine  [sel]   = r.data;
                     dataArray[idx]  <= oldLine;
                     refDMem.commit(r, tagged Valid dataArray[idx], tagged Invalid);
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_in_M, oldLine=%x, newLine=%x ",dataArray[idx], oldLine));
                 end
-                else 
+                else begin 
                     cacheState <= ActiveUpgrade;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_not_in_M, will do ActiveUpgrade, msi=", fshow(msiArray[idx])) );
+                end
             end
             else begin 
                 $fwrite(stderr, "ERROR : current cache only support ld and st op\n");
@@ -78,10 +83,14 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
             end
         end
         else begin
-            if(msiArray[idx] == I)
+            if(msiArray[idx] == I) begin
                 cacheState <= ActiveUpgrade  ;
-            else 
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is I, will do ActiveUpgrade"));
+            end
+            else begin 
                 cacheState <= ActiveDowngrade;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+            end
         end
     endrule
         
@@ -94,15 +103,19 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
 
         Addr oldAddr = address(curTag, idx, sel);      //NOTE: 这里的sel是不正确的，不过后级只需要tag和idx，不关心sel
         let data = msiArray[idx] == M ? tagged Valid dataArray[idx] : tagged Invalid;
-        toMem.enq_resp(CacheMemResp{child: id, addr: oldAddr, state: I, data: data});
+        let  toMemResp = CacheMemResp{child: id, addr: oldAddr, state: I, data: data};
+        toMem.enq_resp(toMemResp);
         msiArray[idx] <= I;
 
         cacheState <= ActiveUpgrade;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveDowngrade]: old_msi=%1d, toMemResp=",msiArray[idx], fshow(toMemResp)));
     endrule
 
     rule doActiveUpgrade(cacheState == ActiveUpgrade);
-        toMem.enq_req(CacheMemReq{child: id, addr: missReq.addr, state: missReq.op == St ? M : S});
+        let toMemReq = CacheMemReq{child: id, addr: missReq.addr, state: missReq.op == St ? M : S};
+        toMem.enq_req(toMemReq);
         cacheState <= WaitUpgradeResp;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveUpgrade]: toMemReq=",fshow(toMemReq)));
     endrule
 
     rule doWaitUpgradeResp(cacheState == WaitUpgradeResp && fromMem.hasResp);
@@ -125,6 +138,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         tagArray [idx] <= tag       ;
         msiArray [idx] <= resp.state;
         cacheState <= Ready;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [WaitUpgradeResp]: fromMemResp=",fshow(resp)));
     endrule
     
     rule doPassiveDowngrade(fromMem.hasReq);    //被动降级
@@ -135,11 +149,14 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
 
         let curTag = tagArray[idx];
         let msi    = msiArray[idx];
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: oriMsi=%1d, fromMemReq=",msi ,fshow(req)));
 
         if ( (msi > req.state) && (tag == curTag) ) begin
             let data = msi == M ? tagged Valid dataArray[idx] : tagged Invalid;
-            toMem.enq_resp(CacheMemResp{child: id, addr: req.addr, state: req.state, data: data});
+            let toMemResp = CacheMemResp{child: id, addr: req.addr, state: req.state, data: data};
+            toMem.enq_resp(toMemResp);
             msiArray[idx] <= req.state;
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: msi > req.state, need downgrade, toMemResp=", fshow(toMemResp)) );
         end
     endrule
 

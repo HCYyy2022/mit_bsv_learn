@@ -102,10 +102,10 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
 
     WideMem                 wideMemWrapper <- mkWideMemFromDDR3( ddr3ReqFifo, ddr3RespFifo );
     Vector#(2, WideMem)     wideMems       <- mkSplitWideMem( csrf.started, wideMemWrapper );
-	//Cache iMem <- mkCache(wideMems[1]);
-	//Cache dMem <- mkCache(wideMems[0]);
-	Cache iMem <- mkNBCache(wideMems[1], 1);
-	Cache dMem <- mkNBCache(wideMems[0], 0);
+    Cache iMem <- mkCache(wideMems[1]);
+    Cache dMem <- mkCache(wideMems[0]);
+    //Cache iMem <- mkNBCache(wideMems[1], 1);
+    //Cache dMem <- mkNBCache(wideMems[0], 0);
 
     // FIFO between two stages
     Fifo#(2, F2D) f2dFifo <- mkCFFifo;

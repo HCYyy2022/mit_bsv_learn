@@ -41,3 +41,10 @@ include $(CONNECTALDIR)/Makefile.connectal
 
 clean:
 	rm -rf bluesim
+
+clean2:
+	rm -rf buildDir
+
+three:
+	mkdir -p buildDir
+	bsc -u -sim -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -p +:src/ref -D CORE_NUM=$(CORENUM) -aggressive-conditions -keep-fires src/ThreeCycle.bsv
