@@ -3,7 +3,7 @@
 import Types::*;
 import ProcTypes::*;
 import MemTypes::*;
-import MemInit::*;
+//import MemInit::*;
 import RFile::*;
 import GetPut::*;
 import ClientServer::*;
@@ -22,7 +22,13 @@ import Btb::*;
 import Bht::*;
 import Scoreboard::*;
 import Ras :: *;
-import Cache::*;
+//import Cache::*;
+import ICache::*;
+import DCache::*;
+import FShow::*;
+import MessageFifo::*;
+import RefTypes::*;
+import MemReqIDGen::*;
 
 
 typedef struct{
@@ -31,7 +37,7 @@ typedef struct{
     Bool eEpoch;
     Bool dEpoch;
     //Bool rEpoch;
-} F2D deriving (Bits, Eq);
+} F2D deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
@@ -39,7 +45,7 @@ typedef struct {
     Bool eEpoch;
     //Bool rEpoch;
     DecodedInst dInst;
-} D2R deriving (Bits, Eq);
+} D2R deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
@@ -49,32 +55,27 @@ typedef struct {
     Data rVal1;
     Data rVal2;
     Data csrVal;
-} R2E deriving (Bits, Eq);
+} R2E deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
     Maybe#(ExecInst) eInst;
-} E2M deriving (Bits, Eq);
+} E2M deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
     Maybe#(ExecInst) eInst;
-} M2W deriving (Bits, Eq);
+} M2W deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
     Addr nextPc;
-} ExeRedirect deriving (Bits, Eq);
+} ExeRedirect deriving (Bits, Eq, FShow);
 
 typedef struct {
     Addr pc;
     Addr nextPc;
-} DecRedirect deriving (Bits, Eq);
-
-//typedef struct {
-//    Addr pc;
-//    Addr nextPc;
-//} RegRedirect deriving (Bits, Eq);
+} DecRedirect deriving (Bits, Eq, FShow);
 
 //btb只有在预测错误的时候进行训练
 //bht对所有Br类型的指令进行训练
@@ -83,16 +84,20 @@ typedef struct {
 
 
 //(* synthesize *)
-module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo)(Proc);
+//module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo)(Proc);
+module mkCore#(CoreID id)( WideMem iMem, RefDMem refDMem, Core ifc);
+    Bool  needDebugPrint = True;
+    Fmt   printPrefix = $format("[SixStage(core%2d) debug]", id);
+
     Ehr#(2, Addr)     pcReg      <- mkEhr(?);
     RFile             rf         <- mkRFile;
-    //FPGAMemory        iMem       <- mkFPGAMemory;
-    //FPGAMemory        dMem       <- mkFPGAMemory;
-    CsrFile           csrf       <- mkCsrFile;
+    CsrFile           csrf       <- mkCsrFile(id);
     Btb#(6)           btb        <- mkBtb; // 64-entry BTB
     DirectionPred#(8) bht        <- mkBHT; //256-entry BHT
     Scoreboard#(4)    sb         <- mkCFScoreboard;
     RAS#(8)           jarRas     <- mkRas;
+    
+    MemReqIDGen     memReqIDGen  <- mkMemReqIDGen;
     //NOTE: 和教材上的不同，这里使用的是全局的Epoch，教材上使用的是分布式的
     Reg#(Bool)        exeEpoch   <- mkReg(False); // global epoch for redirection from Execute  stage
     Reg#(Bool)        decEpoch   <- mkReg(False); // global epoch for redirection from Decode   stage
@@ -100,12 +105,10 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
     Ehr#(2, Maybe#(ExeRedirect)) exeRedirect <- mkEhr(Invalid); //EHR for Excute redirection
     Ehr#(2, Maybe#(DecRedirect)) decRedirect <- mkEhr(Invalid); //EHR for Decode redirection
 
-    WideMem                 wideMemWrapper <- mkWideMemFromDDR3( ddr3ReqFifo, ddr3RespFifo );
-    Vector#(2, WideMem)     wideMems       <- mkSplitWideMem( csrf.started, wideMemWrapper );
-    Cache iMem <- mkCache(wideMems[1]);
-    Cache dMem <- mkCache(wideMems[0]);
-    //Cache iMem <- mkNBCache(wideMems[1], 1);
-    //Cache dMem <- mkNBCache(wideMems[0], 0);
+    MessageFifo#(8)   toParentQ <- mkMessageFifo;
+    MessageFifo#(8) fromParentQ <- mkMessageFifo;
+    ICache               iCache <- mkICache(iMem);
+    DCache               dCache <- mkDCache(id, toMessageGet(fromParentQ), toMessagePut(toParentQ), refDMem);
 
     // FIFO between two stages
     Fifo#(2, F2D) f2dFifo <- mkCFFifo;
@@ -114,13 +117,15 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
     Fifo#(2, E2M) e2mFifo <- mkCFFifo;   
     Fifo#(2, M2W) m2wFifo <- mkCFFifo;
 
-    //Bool memReady = iMem.init.done && dMem.init.done;
+    //===================================================================//
+    //function
+    //===================================================================//
+    function Action  debugInfoPrint(Bool needPrint,Fmt prefix, Fmt info);
+        return action
+            if(needPrint) $display(prefix + info);
+        endaction;
+    endfunction
 
-    // some garbage may get into ddr3RespFifo during soft reset
-    // this rule drains all such garbage
-    rule drainMemResponses( !csrf.started );
-        ddr3RespFifo.deq;
-    endrule
     
     //NOTE:  阻塞定位使用
     //由于第一次使用的Cache.bsv存在问题, 使用rule fifoFullDisplay定位阻塞在哪里
@@ -133,24 +138,25 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
     //endrule
     
     rule doFetch(csrf.started);
-        iMem.req(MemReq{op:Ld, addr:pcReg[0], data:?});
+        //iMem.req(MemReq{op:Ld, addr:pcReg[0], data:?});
+        iCache.req(pcReg[0]);
         let ppc = btb.predPc(pcReg[0]);
         pcReg[0] <= ppc;
         
         let f2d = F2D{pc:pcReg[0], ppc:ppc, eEpoch:exeEpoch, dEpoch:decEpoch};
         f2dFifo.enq(f2d);
-        $display("[Fetch] : PC = %x", pcReg[0]);
+        debugInfoPrint(needDebugPrint, printPrefix, $format(" [Fetch], pc=%x, f2d=: ", pcReg[0], fshow(f2d) ) );
     endrule
 
     rule doDecode(csrf.started);
         f2dFifo.deq;
         let f2d = f2dFifo.first;
-        let inst <- iMem.resp;
+        let inst <- iCache.resp;
         if(f2d.eEpoch != exeEpoch) begin
-            $display("[Decode][Kill instruction,exeEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][Kill instruction,exeEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
         end
         else if(f2d.dEpoch != decEpoch) begin
-            $display("[Decode][Kill instruction,decEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][Kill instruction,decEpoch not eq]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
         end
         else begin
             let dInst = decode(inst);
@@ -165,13 +171,13 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
             //jarRas push and pop
             if( (dInst.iType == Jr || dInst.iType == J) &&  dst == 1) begin
                 jarRas.push(pushAddr);
-                $display("[Decode][initiate function call, jarRas push]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][initiate function call, jarRas push]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
             end
             else if(dInst.iType == Jr && dst == 0 && src1 == 1) begin
                 let popMaybeAddr <- jarRas.pop();
                 popValid = isValid(popMaybeAddr);
                 popAddr  = fromMaybe(?, popMaybeAddr);
-                $display("[Decode][return from function call, jarRas pop]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][return from function call, jarRas pop]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
             end
 
             //decode predPc
@@ -190,12 +196,12 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
 
             //decode redirect
             if(curPredPc != predPc) begin
-                $display("[Decode][find Mispredict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][find Mispredict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
                 decRedirect[0] <= tagged Valid DecRedirect{pc:f2d.pc, nextPc:curPredPc };
                 predPc = curPredPc;  //curPredPc
             end
             else begin
-                $display("[Decode][right predict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst));
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Decode][right predict]: PC = %x, inst = %x, expanded = ", f2d.pc, inst, showInst(inst)) );
             end
 
             let d2r = D2R{pc:f2d.pc, ppc:predPc, eEpoch:f2d.eEpoch, dInst:dInst};
@@ -221,7 +227,7 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
 
         if(d2r.eEpoch != exeEpoch) begin
             d2rFifo.deq;
-            $display("[RegFetch][Kill instruction,exeEpoch not eq]: PC = %x ", d2r.pc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[RegFetch][Kill instruction,exeEpoch not eq]: PC = %x ", d2r.pc) );
         end
         else begin
             if(!sb.search1(d2r.dInst.src1) && !sb.search2(d2r.dInst.src2)) begin
@@ -237,10 +243,10 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
                 d2rFifo.deq;
                 r2eFifo.enq(r2e);
                 sb.insert(d2r.dInst.dst);
-                $display("[RegFetch]: PC = %x, insert sb = %x, dstValid: %x", d2r.pc, dst, dstValid);
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[RegFetch]: PC = %x, insert sb = %x, dstValid: %x", d2r.pc, dst, dstValid) );
             end
             else begin
-                $display("[RegFetch]: Stalled, PC = %x, src1 = %x (%x), src2 = %x (%x)", d2r.pc, src1, src1Valid, src2, src2Valid);
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[RegFetch]: Stalled, PC = %x, src1 = %x (%x), src2 = %x (%x)", d2r.pc, src1, src1Valid, src2, src2Valid) );
             end
         end
 
@@ -251,7 +257,7 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
         r2eFifo.deq;
         Maybe#(ExecInst) eInst2 = Invalid;
         if(r2e.eEpoch != exeEpoch) begin
-            $display("[Execute]: Kill instruction, PC: %x",r2e.pc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[Execute]: Kill instruction, PC: %x",r2e.pc) );
         end
         else begin
             let eInst = exec(r2e.dInst, r2e.rVal1, r2e.rVal2, r2e.pc, r2e.ppc, r2e.csrVal);
@@ -261,7 +267,7 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
                 $finish;
             end
             if(eInst.mispredict) begin 
-                $display("[Execute] : finds misprediction, PC = %x", r2e.pc);
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Execute] : finds misprediction, PC = %x", r2e.pc) );
                 exeRedirect[0] <= Valid (ExeRedirect { pc: r2e.pc, nextPc: eInst.addr });
             end
             else begin
@@ -271,7 +277,7 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
             //if(eInst.iType == Br || eInst.iType == J) begin
             if(eInst.iType == Br) begin   //所有B型指令都需要训练bht,只有在Excute阶段能拿到eInst.brTaken并对bht进行训练
                 bht.update(r2e.pc, eInst.brTaken);
-                $display("[Execute] Br Type inst,update bht : PC = %x", r2e.pc);
+                debugInfoPrint(needDebugPrint, printPrefix, $format("[Execute] Br Type inst,update bht : PC = %x", r2e.pc) );
             end
         end
         let e2m = E2M{ pc:r2e.pc, eInst:eInst2 };
@@ -283,15 +289,51 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
         let e2m = e2mFifo.first;
         if(isValid(e2m.eInst)) begin
             let eInst = fromMaybe(?, e2m.eInst);
-            if(eInst.iType == Ld) begin
-                dMem.req(MemReq{op: Ld, addr: eInst.addr, data: ?});
-            end else if(eInst.iType == St) begin
-                dMem.req(MemReq{op: St, addr: eInst.addr, data: eInst.data});
-            end
-            $display("[Memory] : valid eInst, PC = %x", e2m.pc);
+            //if(eInst.iType == Ld) begin
+            //    dMem.req(MemReq{op: Ld, addr: eInst.addr, data: ?});
+            //end else if(eInst.iType == St) begin
+            //    dMem.req(MemReq{op: St, addr: eInst.addr, data: eInst.data});
+            //end
+            case (eInst.iType)
+                Ld: begin
+                    let rid <- memReqIDGen.getID;   //rid不是core id,只是给每条访存命令打上标签，用于调试
+                    let req = MemReq { op: Ld, addr: eInst.addr, data: ?, rid: rid };
+                    dCache.req(req);
+                    debugInfoPrint(needDebugPrint, printPrefix, $format(" [Memory][Ld op], rid=%x, req= ", rid, fshow(req)) );
+                end
+                St: begin
+                    let rid <- memReqIDGen.getID;
+                    let req = MemReq { op: St, addr: eInst.addr, data: eInst.data, rid: rid };
+                    dCache.req(req);
+                    debugInfoPrint(needDebugPrint, printPrefix, $format(" [Memory][St op], rid=%x, req= ", rid, fshow(req)) );
+                end
+                Lr: begin
+                    let rid <- memReqIDGen.getID;
+                    let req = MemReq { op: Lr, addr: eInst.addr, data: ?, rid: rid };
+                    dCache.req(req);
+                    debugInfoPrint(needDebugPrint, printPrefix, $format(" [Memory][Lr op], rid=%x, req= ", rid, fshow(req)) );
+                end
+                Sc: begin
+                    let rid <- memReqIDGen.getID;
+                    let req = MemReq { op: Sc, addr: eInst.addr, data: eInst.data, rid: rid };
+                    dCache.req(req);
+                    debugInfoPrint(needDebugPrint, printPrefix, $format(" [Memory][Sc op], rid=%x, req= ", rid, fshow(req)) );
+                end
+                Fence: begin
+                    let rid <- memReqIDGen.getID;
+                    let req = MemReq { op: Fence, addr: ?, data: ?, rid: rid };
+                    dCache.req(req);
+                    debugInfoPrint(needDebugPrint, printPrefix, $format(" [Memory][Fence op], rid=%x, req= ", rid, fshow(req)) );
+                end
+                default: begin
+                end
+            endcase
+            
+
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[Memory] : valid eInst, PC = %x", e2m.pc) );
         end
         else begin
-            $display("[Memory] : Invalid eInst PC = %x", e2m.pc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[Memory] : Invalid eInst PC = %x", e2m.pc) );
         end
         let m2w = M2W{ pc: e2m.pc, eInst:e2m.eInst };
         m2wFifo.enq(m2w);
@@ -303,16 +345,16 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
         if(isValid(m2w.eInst)) begin
             let eInst = fromMaybe(?, m2w.eInst);
             if(eInst.iType == Ld) begin
-                eInst.data <- dMem.resp;
+                eInst.data <- dCache.resp;
             end
             if(isValid(eInst.dst)) begin
                 rf.wr(fromMaybe(?, eInst.dst), eInst.data);
             end
             csrf.wr(eInst.iType == Csrw ? eInst.csr : Invalid, eInst.data);
-            $display("[WriteBack] :  valid eInst, PC = %x, remove sb", m2w.pc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[WriteBack] :  valid eInst, PC = %x, remove sb", m2w.pc) );
         end
         else begin
-            $display("[WriteBack] :  Invalid eInst, PC = %x, remove sb", m2w.pc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("[WriteBack] :  Invalid eInst, PC = %x, remove sb", m2w.pc) );
         end
         sb.remove;            
     endrule
@@ -325,30 +367,33 @@ module mkProc#(Fifo#(2, DDR3_Req)  ddr3ReqFifo, Fifo#(2, DDR3_Resp) ddr3RespFifo
             pcReg[1] <= r.nextPc;
             exeEpoch <= !exeEpoch;      // flip epoch
             btb.update(r.pc, r.nextPc); // train BTB
-            $display("exeRedirect, redirected by Execute, oriPC: %x, truePC :%x",r.pc, r.nextPc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("exeRedirect, redirected by Execute, oriPC: %x, truePC :%x",r.pc, r.nextPc) );
         end
         else if(decRedirect[1] matches tagged Valid .r) begin
             pcReg[1] <= r.nextPc;
             decEpoch <= !decEpoch;      // flip epoch
             btb.update(r.pc, r.nextPc); // 当btb和bht预测的结果不一致的时候，对btb也进行更新
-            $display("decRedirect, redirected by Decode, oriPC: %x, truePC :%x",r.pc, r.nextPc);
+            debugInfoPrint(needDebugPrint, printPrefix, $format("decRedirect, redirected by Decode, oriPC: %x, truePC :%x",r.pc, r.nextPc) );
         end
         // reset EHR
         exeRedirect[1] <= Invalid;
         decRedirect[1] <= Invalid;
     endrule
 
+    interface MessageGet toParent   = toMessageGet(toParentQ);
+    interface MessagePut fromParent = toMessagePut(fromParentQ);
+
     method ActionValue#(CpuToHostData) cpuToHost if(csrf.started);
         let ret <- csrf.cpuToHost;
         return ret;
     endmethod
 
-    method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started && !ddr3RespFifo.notEmpty );
+    method Bool cpuToHostValid = csrf.cpuToHostValid;
+
+    method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started );
         $display("Start cpu");
-        csrf.start(0); // only 1 core, id = 0
+        csrf.start; 
         pcReg[0] <= startpc;
     endmethod
 
-    //interface iMemInit = iMem.init;
-    //interface dMemInit = dMem.init;
 endmodule

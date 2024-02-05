@@ -48,3 +48,7 @@ clean2:
 three:
 	mkdir -p buildDir
 	bsc -u -sim -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -p +:src/ref -D CORE_NUM=$(CORENUM) -aggressive-conditions -keep-fires src/ThreeCycle.bsv
+
+six:
+	mkdir -p buildDir
+	bsc -u -sim -bdir buildDir -info-dir buildDir -simdir buildDir -vdir buildDir -p +:src/includes/ -p +:src/ref -D CORE_NUM=$(CORENUM) -aggressive-conditions -keep-fires src/SixStage.bsv
