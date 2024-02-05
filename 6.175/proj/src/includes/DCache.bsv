@@ -4,6 +4,7 @@ import MyFifo::*;
 import Types::*;
 import RefTypes::*;
 import MemTypes::*;
+import ProcTypes::*;
 
 
 typedef enum{Ready, ActiveDowngrade, ActiveUpgrade, WaitUpgradeResp} CacheStatus deriving(Eq, Bits);
@@ -23,7 +24,9 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
     Vector#(CacheRows, Reg#(CacheLine))      dataArray    <- replicateM(mkRegU);
     Vector#(CacheRows, Reg#(CacheTag))       tagArray     <- replicateM(mkRegU);
     Vector#(CacheRows, Reg#(MSI))            msiArray     <- replicateM(mkReg(I));
-    Reg#(MemReq) missReq <- mkRegU;
+
+    Reg#(Maybe#(CacheLineAddr)) linkAddr <- mkReg(Invalid);
+    Reg#(MemReq) missReq                 <- mkRegU;
 
     Fifo#(2, MemReq )    reqQ  <- mkPipelineFifo;
     Fifo#(2, MemResp)    respQ <- mkBypassFifo  ;
@@ -50,10 +53,12 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         let hit  = (tagArray[idx] == tag);
         missReq  <= r;
         
+        let isScFail = ( r.op == Sc && (!isValid(linkAddr) || getLineAddr(r.addr) != fromMaybe(?, linkAddr)) );
+        
         //$display("[DCache debug] - hit: %1d, msiState: %2d", hit, msiArray[idx]);
         debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]: msi= %1d, curReq=", msiArray[idx] ,fshow(r)));
         if(hit) begin
-            if (r.op == Ld) begin
+            if (r.op == Ld || r.op == Lr) begin
                 if (msiArray[idx] > I) begin
                     respQ.enq(dataArray[idx][sel]);
                     refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid dataArray[idx][sel]);
@@ -63,33 +68,62 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
                     cacheState <= ActiveUpgrade;
                     debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Ld_hit_in_I (not hit, will do ActiveUpgrade)"));
                 end
-            end
-            else if(r.op == St) begin
-                if (msiArray[idx] == M) begin
-                    let oldLine    = dataArray[idx];
-                    oldLine  [sel]   = r.data;
-                    dataArray[idx]  <= oldLine;
-                    refDMem.commit(r, tagged Valid dataArray[idx], tagged Invalid);
-                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_in_M, oldLine=%x, newLine=%x ",dataArray[idx], oldLine));
+                if(r.op == Lr) begin
+                    linkAddr <= tagged Valid getLineAddr(r.addr);
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Lr op, set linkAddr"));
                 end
-                else begin 
-                    cacheState <= ActiveUpgrade;
-                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_not_in_M, will do ActiveUpgrade, msi=", fshow(msiArray[idx])) );
+            end
+            else if(r.op == St || r.op == Sc) begin
+                if(isScFail) begin
+                    respQ.enq(scFail);
+                    refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scFail);
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Sc op, isScFail"));
+                    linkAddr <= tagged Invalid;
+                end
+                else begin
+                    if (msiArray[idx] == M) begin
+                        let oldLine    = dataArray[idx];
+                        oldLine  [sel]   = r.data;
+                        dataArray[idx]  <= oldLine;
+                        
+                        if(r.op == Sc) begin
+                            respQ.enq(scSucc);
+                            refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scSucc);
+                            debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Sc op, isScSucc"));
+                            linkAddr <= tagged Invalid;
+                        end
+                        else begin
+                            refDMem.commit(r, tagged Valid dataArray[idx], tagged Invalid);
+                            debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_in_M, oldLine=%x, newLine=%x ",dataArray[idx], oldLine));
+                        end
+                    end
+                    else begin 
+                        cacheState <= ActiveUpgrade;
+                        debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:st_hit_not_in_M, will do ActiveUpgrade, msi=", fshow(msiArray[idx])) );
+                    end
                 end
             end
             else begin 
-                $fwrite(stderr, "ERROR : current cache only support ld and st op\n");
+                $fwrite(stderr, "ERROR : current cache only support ld and st, Sc and Lr op\n");
                 $finish;
             end
         end
-        else begin
-            if(msiArray[idx] == I) begin
-                cacheState <= ActiveUpgrade  ;
-                debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is I, will do ActiveUpgrade"));
+        else begin   //not hit
+            if(isScFail) begin
+                respQ.enq(scFail);
+                refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scFail);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:Sc op(not hit), isScFail"));
+                linkAddr <= tagged Invalid;
             end
-            else begin 
-                cacheState <= ActiveDowngrade;
-                debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+            else begin
+                if(msiArray[idx] == I) begin
+                    cacheState <= ActiveUpgrade  ;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is I, will do ActiveUpgrade"));
+                end
+                else begin 
+                    cacheState <= ActiveDowngrade;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doReq_rule]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+                end
             end
         end
     endrule
@@ -109,6 +143,11 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
 
         cacheState <= ActiveUpgrade;
         debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveDowngrade]: old_msi=%1d, toMemResp=",msiArray[idx], fshow(toMemResp)));
+
+        if (isValid(linkAddr) && fromMaybe(?, linkAddr)==getLineAddr(missReq.addr)) begin
+            linkAddr <= tagged Invalid;
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveDowngrade]:  linkAddr is Valid, set Invalid") );
+        end
     endrule
 
     rule doActiveUpgrade(cacheState == ActiveUpgrade);
@@ -126,13 +165,27 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
         let tag     = getTag       (missReq.addr);
         let newLine = isValid(resp.data) ? fromMaybe(?, resp.data) : dataArray[idx];
 
-        if (missReq.op == Ld)  begin
+        if (missReq.op == Ld || missReq.op ==Lr)  begin
             respQ.enq(newLine[sel]);
             refDMem.commit(missReq, tagged Valid newLine, tagged Valid newLine[sel]);
+            if(missReq.op ==Lr) begin
+                linkAddr <= tagged Valid getLineAddr(missReq.addr);
+            end
         end
         else if (missReq.op == St)  begin
             refDMem.commit(missReq, tagged Valid newLine, tagged Invalid);
             newLine[sel] = missReq.data;
+        end
+        else if (missReq.op == Sc)  begin
+            if (isValid(linkAddr) && fromMaybe(?, linkAddr) == getLineAddr(missReq.addr)) begin
+                refDMem.commit(missReq, tagged Valid newLine, tagged Valid scSucc);
+                respQ.enq(scSucc);
+                newLine[sel] = missReq.data;
+            end else begin   //NOTE:  理论上是不会进入这个状态的
+                refDMem.commit(missReq, tagged Valid newLine, tagged Valid scFail);
+                respQ.enq(scFail);
+            end
+            linkAddr <= tagged Invalid;
         end
         dataArray[idx] <= newLine   ;
         tagArray [idx] <= tag       ;
@@ -143,7 +196,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
     
     rule doPassiveDowngrade(fromMem.hasReq);    //被动降级
         fromMem.deq;
-        let req = fromMem.first.Req;
+        let req    = fromMem.first.Req;
         let idx    = getIndex(req.addr);
         let tag    = getTag  (req.addr);
 
@@ -157,6 +210,10 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
             toMem.enq_resp(toMemResp);
             msiArray[idx] <= req.state;
             debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: msi > req.state, need downgrade, toMemResp=", fshow(toMemResp)) );
+            if (isValid(linkAddr) && fromMaybe(?, linkAddr)==getLineAddr(req.addr)) begin
+                linkAddr <= tagged Invalid;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: msi > req.state, linkAddr is Valid, set Invalid") );
+            end
         end
     endrule
 

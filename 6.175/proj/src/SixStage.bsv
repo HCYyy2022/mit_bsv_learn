@@ -344,7 +344,8 @@ module mkCore#(CoreID id)( WideMem iMem, RefDMem refDMem, Core ifc);
         let m2w = m2wFifo.first;
         if(isValid(m2w.eInst)) begin
             let eInst = fromMaybe(?, m2w.eInst);
-            if(eInst.iType == Ld) begin
+            //if(eInst.iType == Ld) begin
+            if (eInst.iType == Ld || eInst.iType == Lr || eInst.iType == Sc) begin
                 eInst.data <- dCache.resp;
             end
             if(isValid(eInst.dst)) begin
