@@ -140,6 +140,7 @@ endmodule
 
 
 
+/*
 
 module mkNBCache(WideMem wideMem, int id, Cache ifc);
     Vector#(CacheRows, Reg#(CacheLine))            dataArray  <- replicateM(mkRegU);
@@ -265,3 +266,4 @@ module mkNBCache(WideMem wideMem, int id, Cache ifc);
     endmethod
 
 endmodule
+*/

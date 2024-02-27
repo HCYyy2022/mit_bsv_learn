@@ -151,7 +151,7 @@ module mkDCache#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMe
     endrule
 
     rule doActiveUpgrade(cacheState == ActiveUpgrade);
-        let toMemReq = CacheMemReq{child: id, addr: missReq.addr, state: missReq.op == St ? M : S};
+        let toMemReq = CacheMemReq{child: id, addr: missReq.addr, state: (missReq.op == St || missReq.op == Sc) ? M : S};
         toMem.enq_req(toMemReq);
         cacheState <= WaitUpgradeResp;
         debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveUpgrade]: toMemReq=",fshow(toMemReq)));

@@ -1,0 +1,5 @@
+//****************************************************************************************************************//
+//* Discussion Question 1 (5 Points): Explain why the IPC of assembly test cache_conflict.S is so high even though there
+//* is a store miss in every loop iteration. The source code is located in programs/assembly/src.
+//****************************************************************************************************************//
+Because many nop instructions are added in each loop.
