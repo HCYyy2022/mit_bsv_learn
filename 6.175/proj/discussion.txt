@@ -3,3 +3,20 @@
 //* is a store miss in every loop iteration. The source code is located in programs/assembly/src.
 //****************************************************************************************************************//
 Because many nop instructions are added in each loop.
+
+
+
+
+//****************************************************************************************************************//
+//*  In un-optimized assembly code, a program may write to memory only to read it in the very next instruction:
+//*  sw  x1, 0(x2)
+//*  lw  x3, 0(x2)
+//*  add x4, x3, x3
+//* This frequently happens when a program saves its arguments to a subroutine on the stack.
+//* Instead of writing out a register's value to memory, an optimizing compiler (GCC, for instance)
+//* can keep the value in a register to speed up accesses to this data. How can this behavior of an
+//* optimizing compiler affect what you have just designed? Are store queues still important?
+//****************************************************************************************************************//
+Storing the value in a register will negate the optimization that was just done. However, stq is still important
+because in scenarios where some compilers do not optimize, or when an ld immediately follows an sw that is not 
+in the same cache but hits, our optimization will be effective.

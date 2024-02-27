@@ -10,340 +10,297 @@ import RefTypes::*;
 import StQ::*;
 
 
-typedef enum{Ready, StartMiss, SendFillReq, WaitFillResp, Resp} CacheStatus
-    deriving(Eq, Bits);
-module mkDCacheLHUSM#(CoreID id)(
-        MessageGet fromMem,
-        MessagePut toMem,
-        RefDMem refDMem,
-        DCache ifc
-	);
+typedef enum{Ready, ActiveDowngrade, ActiveUpgrade, WaitUpgradeResp} CacheStatus deriving(Eq, Bits);
 
-    Reg#(CacheStatus) status <- mkReg(Ready);
+//stq 可以使得load指令绕过前面的store指令执行，提升效率
+//为了保证Sc的顺序性, Sc指令不存入stq,并且在执行Sc的时候，stq必须是空的(指令的顺序是Lr0，Sc0，Lr1, Sc1,如果Sc存入stq，则会导致Lr1,在Sc0之前执行,导致错误的linkAddr设置)
+//为了保证Lr的顺序性，Lr指令在执行的时候，stq必须是空的
 
-    Vector#(CacheRows, Reg#(CacheLine)) dataArray <- replicateM(mkRegU);
-    Vector#(CacheRows, Reg#(CacheTag)) tagArray <- replicateM(mkRegU);
-    Vector#(CacheRows, Reg#(MSI)) privArray <- replicateM(mkReg(I));
-
-    Fifo#(2, Data) hitQ <- mkBypassFifo;
-    Fifo#(1, MemReq) reqQ <- mkBypassFifo;
-    Reg#(MemReq) missReq <- mkRegU;
+module mkDCacheLHUSM#(CoreID id)(MessageGet fromMem, MessagePut toMem, RefDMem refDMem, DCache ifc);
+    Reg#(CacheStatus)                        cacheState   <- mkReg(Ready);
+    Vector#(CacheRows, Reg#(CacheLine))      dataArray    <- replicateM(mkRegU);
+    Vector#(CacheRows, Reg#(CacheTag))       tagArray     <- replicateM(mkRegU);
+    Vector#(CacheRows, Reg#(MSI))            msiArray     <- replicateM(mkReg(I));
 
     Reg#(Maybe#(CacheLineAddr)) linkAddr <- mkReg(Invalid);
+    Reg#(MemReq) missReq                 <- mkRegU;
 
+    Fifo#(2, MemReq )    reqQ  <- mkBypassFifo;
+    Fifo#(2, MemResp)    respQ <- mkBypassFifo;
     StQ#(StQSize) stq <-mkStQ;
+    
+    Bool  needDebugPrint = True;
+    Fmt   prefix = $format("[mkDCacheStQ(%2d) debug]", id);
 
-    Reg#(Maybe#(Data)) scResp <- mkReg(Invalid);
+    function Action  debugInfoPrint(Bool needPrint,Fmt prefix, Fmt info);
+        return action
+            if(needPrint) $display(prefix + info);
+        endaction;
+    endfunction
 
-    Reg#(Bool) loadMiss <- mkReg(False);
-
-    rule doStore (reqQ.first.op == St);
-
-        MemReq r = reqQ.first;
+    function Addr address( CacheTag tag, CacheIndex index, CacheWordSelect sel );
+        return {tag, index, sel, 0};
+    endfunction
+    
+    rule doProcSt(reqQ.first.op == St);
+        let r = reqQ.first;
         reqQ.deq;
         stq.enq(r);
-
     endrule
-
-
-    rule doSc (status == Ready && reqQ.first.op == Sc && !stq.notEmpty);
-
-        MemReq r = reqQ.first;
+    
+    rule doProcSc(cacheState == Ready && reqQ.first.op == Sc && !stq.notEmpty);
         reqQ.deq;
-
-        CacheWordSelect sel = getWordSelect(r.addr);
-        CacheIndex idx = getIndex(r.addr);
-        CacheTag tag = getTag(r.addr);
-
-        if (linkAddr matches tagged Valid .la &&& la == getLineAddr(r.addr)) begin
-
-            if (tagArray[idx] == tag && privArray[idx] > I) begin
-
-                if (privArray[idx] == M) begin
-                    hitQ.enq(scSucc);
-                    dataArray[idx][sel] <= r.data;
-                    refDMem.commit(r, Valid(dataArray[idx]), Valid(scSucc));
-                    linkAddr <= Invalid;
-                end
-                else begin
-                    missReq <= r;
-                    status <= SendFillReq;
-                end
+        let r    = reqQ.first;
+        let sel  = getWordSelect(r.addr);
+        let idx  = getIndex     (r.addr);
+        let tag  = getTag       (r.addr);
+        let hit  = (tagArray[idx] == tag);
+        missReq  <= r;
+        let isScFail =   (!isValid(linkAddr) || getLineAddr(r.addr) != fromMaybe(?, linkAddr)) ;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]: msi= %1d, curReq=", msiArray[idx] ,fshow(r)));
+        if(hit) begin
+            if(isScFail) begin
+                respQ.enq(scFail);
+                refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scFail);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:Sc op, hit, isScFail"));
+                linkAddr <= tagged Invalid;
             end
             else begin
-                missReq <= r;
-                status <= StartMiss;
+                if (msiArray[idx] == M) begin
+                    let oldLine    = dataArray[idx];
+                    oldLine  [sel]   = r.data;
+                    dataArray[idx]  <= oldLine;
+                    
+                    respQ.enq(scSucc);
+                    refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scSucc);
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:Sc op, hit, isScSucc"));
+                    linkAddr <= tagged Invalid;
+                end
+                else begin 
+                    cacheState <= ActiveUpgrade;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:sc_hit_not_in_M, will do ActiveUpgrade, msi=", fshow(msiArray[idx])) );
+                end
             end
         end
-        else begin
-            hitQ.enq(scFail);
-            refDMem.commit(r, Invalid, Valid(scFail));
-            linkAddr <= Invalid;
+        else begin   //not hit
+            if(isScFail) begin
+                respQ.enq(scFail);
+                refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid scFail);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:Sc op(not hit), isScFail"));
+                linkAddr <= tagged Invalid;
+            end
+            else begin
+                if(msiArray[idx] == I) begin
+                    cacheState <= ActiveUpgrade  ;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:req not hit and mis is I, will do ActiveUpgrade"));
+                end
+                else begin 
+                    cacheState <= ActiveDowngrade;
+                    debugInfoPrint(needDebugPrint, prefix, $format(" [doProcSc]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+                end
+            end
         end
-
     endrule
 
-
-    rule doFence (status == Ready && reqQ.first.op == Fence && !stq.notEmpty);
+    rule doProcFence (cacheState == Ready && reqQ.first.op == Fence && !stq.notEmpty);   //TODO:
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doProcFence]" ));
         reqQ.deq;
         refDMem.commit(reqQ.first, Invalid, Invalid);
     endrule
 
-
-    rule startMiss (status == StartMiss);
-
-        CacheWordSelect sel = getWordSelect(missReq.addr);
-        CacheIndex idx = getIndex(missReq.addr);
-        let tag = tagArray[idx];
-
-        if (privArray[idx] != I) begin
-
-           privArray[idx] <= I;
-
-           Maybe#(CacheLine) line;
-           if (privArray[idx] == M)
-                line = Valid(dataArray[idx]);
-           else
-                line = Invalid;
-
-           let addr = {tag, idx, sel, 2'b0};
-           toMem.enq_resp( CacheMemResp {child: id,
-                                  addr: addr,
-                                  state: I,
-                                  data: line});
-        end
-        status <= SendFillReq;
-        if (isValid(linkAddr) &&
-            fromMaybe(?, linkAddr) == getLineAddr(missReq.addr)) begin
-               linkAddr <= Invalid;
+    rule doProcLoad (cacheState == Ready && (reqQ.first.op == Ld || (reqQ.first.op == Lr && !stq.notEmpty) ) );   //处理Lr指令的时候，需要确保之前的store指令都被处理完了
+        reqQ.deq;
+        let r    = reqQ.first;
+        let sel  = getWordSelect(r.addr);
+        let idx  = getIndex     (r.addr);
+        let tag  = getTag       (r.addr);
+        let hit  = (tagArray[idx] == tag);
+        missReq  <= r;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad]: msi= %1d, curReq=", msiArray[idx] ,fshow(r)));
+        
+        if(r.op == Ld &&& stq.search(r.addr) matches tagged Valid .stqRes) begin
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad][ld_after_st], stqRes: %8h",stqRes));
+            refDMem.commit(r, tagged Invalid, tagged Valid stqRes);
+            respQ.enq(stqRes);
         end
 
-    endrule
-
-
-    rule sendFillReq (status == SendFillReq);
-
-        let upg = (missReq.op == Ld || missReq.op == Lr)? S : M;
-        toMem.enq_req( CacheMemReq {child: id, addr:missReq.addr, state: upg});
-        status <= WaitFillResp;
-
-    endrule
-
-
-    rule waitFillResp (status == WaitFillResp && fromMem.hasResp);
-
-        CacheWordSelect sel = getWordSelect(missReq.addr);
-        CacheIndex idx = getIndex(missReq.addr);
-        let tag = getTag(missReq.addr);
-
-        CacheMemResp x = fromMem.first.Resp;
-
-        CacheLine line;
-        if (isValid(x.data)) line = fromMaybe(?, x.data);
-        else line = dataArray[idx];
-
-        Bool check = False;
-        if (missReq.op == St) begin
-            let old_line = isValid(x.data) ? fromMaybe(?, x.data) : dataArray[idx];
-            refDMem.commit(missReq, Valid(old_line), Invalid);
-            line[sel] = missReq.data;
-            stq.deq;
-        end
-        else if (missReq.op == Sc) begin
-            if (isValid(linkAddr) &&
-                fromMaybe(?, linkAddr) == getLineAddr(missReq.addr)) begin
-
-                let old_line = dataArray[idx];
-                if (isValid(x.data)) old_line = fromMaybe(?, x.data);
-                line[sel] = missReq.data;
-                scResp <= Valid(scSucc);
+        else if(hit) begin
+            if (msiArray[idx] > I) begin
+                respQ.enq(dataArray[idx][sel]);
+                refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid dataArray[idx][sel]);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad][Load_hit], resp_data=%8h, msi=",dataArray[idx][sel] ,fshow(msiArray[idx])));
             end
             else begin
-                scResp <= Valid(scFail);
+                cacheState <= ActiveUpgrade;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad]:Load_hit_in_I (not hit, will do ActiveUpgrade)"));
             end
-            linkAddr <= Invalid;
+            if(r.op == Lr) begin
+                linkAddr <= tagged Valid getLineAddr(r.addr);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad]:Lr op, set linkAddr"));
+            end
         end
-
-        dataArray[idx] <= line;
-        tagArray[idx] <= tag;
-        privArray[idx] <= x.state;
-        fromMem.deq;
-        status <= Resp;
-
+        else begin   //not hit
+            if(msiArray[idx] == I) begin
+                cacheState <= ActiveUpgrade  ;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad]:req not hit and mis is I, will do ActiveUpgrade"));
+            end
+            else begin 
+                cacheState <= ActiveDowngrade;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcLoad]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+            end
+        end
+    endrule
+    
+    rule doProcStq(cacheState == Ready && !stq.isIssued && ((reqQ.notEmpty && reqQ.first.op != Ld) || !reqQ.notEmpty));
+        let r    <- stq.issue;
+        let sel  = getWordSelect(r.addr);
+        let idx  = getIndex     (r.addr);
+        let tag  = getTag       (r.addr);
+        let hit  = (tagArray[idx] == tag);
+        missReq  <= r;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doProcStq]: msi= %1d, curReq=", msiArray[idx] ,fshow(r)));
+        if(hit) begin
+            if (msiArray[idx] == M) begin
+                let oldLine    = dataArray[idx];
+                oldLine  [sel]   = r.data;
+                dataArray[idx]  <= oldLine;
+                
+                refDMem.commit(r, tagged Valid dataArray[idx], tagged Invalid);
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcStq]:st_hit_in_M, oldLine=%x, newLine=%x ",dataArray[idx], oldLine));
+                stq.deq;
+            end
+            else begin 
+                cacheState <= ActiveUpgrade;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcStq]:st_hit_not_in_M, will do ActiveUpgrade, msi=", fshow(msiArray[idx])) );
+            end
+        end
+        else begin   //not hit
+            if(msiArray[idx] == I) begin
+                cacheState <= ActiveUpgrade  ;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcStq]:req not hit and mis is I, will do ActiveUpgrade"));
+            end
+            else begin 
+                cacheState <= ActiveDowngrade;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doProcStq]:req not hit and mis is not I, will do ActiveDowngrade, msi=", fshow(msiArray[idx])) );
+            end
+        end
+    endrule
+    
+    rule doLHUSM(cacheState != Ready && reqQ.first.op == Ld && missReq.op == St);
+        let r    = reqQ.first;
+        let sel  = getWordSelect(r.addr);
+        let idx  = getIndex     (r.addr);
+        let tag  = getTag       (r.addr);
+        let hit  = (tagArray[idx] == tag);
+        
+        if(stq.search(r.addr) matches tagged Valid .stqRes) begin
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doLHUSM]:ld_after_st")) ;
+            refDMem.commit(r, tagged Invalid, tagged Valid stqRes);
+            respQ.enq(stqRes);
+            reqQ.deq;
+        end
+        else if( hit && (msiArray[idx] > I) ) begin
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doLHUSM]:ld hit")) ;
+            refDMem.commit(r, tagged Valid dataArray[idx], tagged Valid dataArray[idx][sel]);
+            respQ.enq(dataArray[idx][sel]);
+            reqQ.deq;
+        end
     endrule
 
+        
+    rule doActiveDowngrade(cacheState == ActiveDowngrade);  //当发生为不命中且不在I状态的时候，需要先进行主动降级
+        let sel  = getWordSelect(missReq.addr);
+        let idx  = getIndex     (missReq.addr);
+        let tag  = getTag       (missReq.addr);
 
-    rule sendCore (status == Resp);
+        let curTag = tagArray[idx];
 
-        CacheIndex idx = getIndex(missReq.addr);
-        CacheWordSelect sel = getWordSelect(missReq.addr);
+        Addr oldAddr = address(curTag, idx, sel);      //NOTE: 这里的sel是不正确的，不过后级只需要tag和idx，不关心sel
+        let data = msiArray[idx] == M ? tagged Valid dataArray[idx] : tagged Invalid;
+        let  toMemResp = CacheMemResp{child: id, addr: oldAddr, state: I, data: data};
+        toMem.enq_resp(toMemResp);
+        msiArray[idx] <= I;
 
-        if (missReq.op == Ld || missReq.op == Lr) begin
-            hitQ.enq(dataArray[idx][sel]);
-            refDMem.commit(missReq, Valid(dataArray[idx]),
-                            Valid(dataArray[idx][sel]));
+        cacheState <= ActiveUpgrade;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveDowngrade]: old_msi=%1d, toMemResp=",msiArray[idx], fshow(toMemResp)));
 
-            if (missReq.op == Lr) begin
+        if (isValid(linkAddr) && fromMaybe(?, linkAddr)==getLineAddr(missReq.addr)) begin
+            linkAddr <= tagged Invalid;
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveDowngrade]:  linkAddr is Valid, set Invalid") );
+        end
+    endrule
+
+    rule doActiveUpgrade(cacheState == ActiveUpgrade);
+        let toMemReq = CacheMemReq{child: id, addr: missReq.addr, state: (missReq.op == St || missReq.op == Sc) ? M : S};
+        toMem.enq_req(toMemReq);
+        cacheState <= WaitUpgradeResp;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doActiveUpgrade]: toMemReq=",fshow(toMemReq)));
+    endrule
+
+    rule doWaitUpgradeResp(cacheState == WaitUpgradeResp && fromMem.hasResp);
+        fromMem.deq;
+        let resp    = fromMem.first.Resp;
+        let sel     = getWordSelect(missReq.addr);
+        let idx     = getIndex     (missReq.addr);
+        let tag     = getTag       (missReq.addr);
+        let newLine = isValid(resp.data) ? fromMaybe(?, resp.data) : dataArray[idx];
+
+        if (missReq.op == Ld || missReq.op ==Lr)  begin
+            respQ.enq(newLine[sel]);
+            refDMem.commit(missReq, tagged Valid newLine, tagged Valid newLine[sel]);
+            if(missReq.op ==Lr) begin
                 linkAddr <= tagged Valid getLineAddr(missReq.addr);
             end
         end
-        else if (missReq.op == Sc) begin
-            if (isValid(scResp)) hitQ.enq(fromMaybe(?, scResp));
-            refDMem.commit(missReq, Invalid, scResp);
-            scResp <= Invalid;
+        else if (missReq.op == St)  begin
+            refDMem.commit(missReq, tagged Valid newLine, tagged Invalid);
+            stq.deq;
+            newLine[sel] = missReq.data;
         end
-
-        status <= Ready;
-        loadMiss <= False;
-
-    endrule
-
-
-    rule doLoad (
-                status == Ready &&
-                (reqQ.first.op == Ld || (reqQ.first.op == Lr && !stq.notEmpty)) &&
-                !loadMiss
-                );
-
-        MemReq r = reqQ.first;
-
-        CacheWordSelect sel = getWordSelect(r.addr);
-        CacheIndex idx = getIndex(r.addr);
-        CacheTag tag = getTag(r.addr);
-
-        let hit = False;
-
-        reqQ.deq;
-
-        let x = stq.search(r.addr);
-        if (isValid(x)) begin
-            hitQ.enq(fromMaybe(?, x));
-            refDMem.commit(r, Invalid, x);
-            hit = True;
-        end
-        else begin
-
-            if (tagArray[idx] == tag && privArray[idx] > I) begin
-
-                hitQ.enq(dataArray[idx][sel]);
-                refDMem.commit(r, Valid(dataArray[idx]),
-                                Valid(dataArray[idx][sel]));
-                hit = True;
-
+        else if (missReq.op == Sc)  begin
+            if (isValid(linkAddr) && fromMaybe(?, linkAddr) == getLineAddr(missReq.addr)) begin
+                refDMem.commit(missReq, tagged Valid newLine, tagged Valid scSucc);
+                respQ.enq(scSucc);
+                newLine[sel] = missReq.data;
+            end else begin   //NOTE:  理论上是不会进入这个状态的
+                refDMem.commit(missReq, tagged Valid newLine, tagged Valid scFail);
+                respQ.enq(scFail);
             end
-            else begin
-                missReq <= r;
-                status <= StartMiss;
-                loadMiss <= True;
-            end
+            linkAddr <= tagged Invalid;
         end
-
-        if (hit && r.op == Lr)
-            linkAddr <= tagged Valid getLineAddr(r.addr);
+        dataArray[idx] <= newLine   ;
+        tagArray [idx] <= tag       ;
+        msiArray [idx] <= resp.state;
+        cacheState <= Ready;
+        debugInfoPrint(needDebugPrint, prefix, $format(" [WaitUpgradeResp]: fromMemResp=",fshow(resp)));
     endrule
 
-    rule doLHUSM (
-                status != Ready &&
-                !fromMem.hasResp && !fromMem.hasReq &&
-                missReq.op == St &&
-                (reqQ.first.op == Ld || (reqQ.first.op == Lr && !stq.notEmpty)) &&
-                !loadMiss
-                );
-
-        MemReq r = reqQ.first;
-
-        CacheWordSelect sel = getWordSelect(r.addr);
-        CacheIndex idx = getIndex(r.addr);
-        CacheTag tag = getTag(r.addr);
-
-        let hit = False;
-
-        let x = stq.search(r.addr);
-        if (isValid(x)) begin
-
-            hitQ.enq(fromMaybe(?, x));
-            refDMem.commit(r, Invalid, x);
-            hit = True;
-            reqQ.deq;
-        end
-
-        else if (tagArray[idx] == tag && privArray[idx] > I) begin
-
-            hitQ.enq(dataArray[idx][sel]);
-            refDMem.commit(r, Valid(dataArray[idx]),
-                            Valid(dataArray[idx][sel]));
-            hit = True;
-            reqQ.deq;
-
-        end
-
-
-        if (hit && r.op == Lr)
-            linkAddr <= tagged Valid getLineAddr(r.addr);
-    endrule
-
-    rule dng (status != Resp && !fromMem.hasResp);
-
-        CacheMemReq x = fromMem.first.Req;
-
-        CacheWordSelect sel = getWordSelect(x.addr);
-        CacheIndex idx = getIndex(x.addr);
-        let tag = getTag(x.addr);
-
-
-        if (privArray[idx] > x.state) begin
-
-           Maybe#(CacheLine) line;
-           if (privArray[idx] == M) line = Valid(dataArray[idx]);
-           else line = Invalid;
-
-           let addr = {tag, idx, sel, 2'b0};
-           toMem.enq_resp( CacheMemResp {child: id,
-                                  addr: addr,
-                                  state: x.state,
-                                  data: line});
-
-            privArray[idx] <= x.state;
-            if (linkAddr matches tagged Valid .la &&& la == getLineAddr(x.addr)
-                && x.state == I) linkAddr <= Invalid;
-        end
-
+    (* descending_urgency = "doPassiveDowngrade, doProcSc" *)
+    (* descending_urgency = "doPassiveDowngrade, doProcLoad" *)
+    (* descending_urgency = "doPassiveDowngrade, doActiveDowngrade" *)
+    (* descending_urgency = "doPassiveDowngrade, doWaitUpgradeResp" *)
+    rule doPassiveDowngrade(fromMem.hasReq);    //被动降级
         fromMem.deq;
-    endrule
+        let req    = fromMem.first.Req;
+        let idx    = getIndex(req.addr);
+        let tag    = getTag  (req.addr);
 
+        let curTag = tagArray[idx];
+        let msi    = msiArray[idx];
+        debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: oriMsi=%1d, fromMemReq=",msi ,fshow(req)));
 
-    rule mvStqToCache (status == Ready && stq.notEmpty &&
-        (!reqQ.notEmpty || reqQ.first.op != Ld));
-
-        MemReq r <- stq.issue;
-
-        CacheWordSelect sel = getWordSelect(r.addr);
-        CacheIndex idx = getIndex(r.addr);
-        CacheTag tag = getTag(r.addr);
-
-        if (tagArray[idx] == tag && privArray[idx] > I) begin
-            if (privArray[idx] == M) begin
-
-                dataArray[idx][sel] <= r.data;
-                refDMem.commit(r, Valid(dataArray[idx]), Invalid);
-                stq.deq;
-                if (linkAddr matches tagged Valid .la &&& la == getLineAddr(r.addr))
-                    linkAddr <= Invalid;
-            end
-            else begin
-
-                missReq <= r;
-                status <= SendFillReq;
+        if ( (msi > req.state) && (tag == curTag) ) begin
+            let data = msi == M ? tagged Valid dataArray[idx] : tagged Invalid;
+            let toMemResp = CacheMemResp{child: id, addr: req.addr, state: req.state, data: data};
+            toMem.enq_resp(toMemResp);
+            msiArray[idx] <= req.state;
+            debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: msi > req.state, need downgrade, toMemResp=", fshow(toMemResp)) );
+            if (isValid(linkAddr) && fromMaybe(?, linkAddr)==getLineAddr(req.addr)) begin
+                linkAddr <= tagged Invalid;
+                debugInfoPrint(needDebugPrint, prefix, $format(" [doPassiveDowngrade]: msi > req.state, linkAddr is Valid, set Invalid") );
             end
         end
-        else begin
-
-            missReq <= r;
-            status <= StartMiss;
-        end
     endrule
-
-
 
     method Action req(MemReq r);
         reqQ.enq(r);
@@ -351,11 +308,9 @@ module mkDCacheLHUSM#(CoreID id)(
     endmethod
 
 
-    method ActionValue#(Data) resp;
-        hitQ.deq;
-        return hitQ.first;
+    method ActionValue#(MemResp) resp;
+        respQ.deq;
+        return respQ.first;
     endmethod
-
-
 
 endmodule

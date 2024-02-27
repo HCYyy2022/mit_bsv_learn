@@ -24,8 +24,9 @@ import Scoreboard::*;
 import Ras :: *;
 //import Cache::*;
 import ICache::*;
-//import DCache::*;
+import DCache::*;
 import DCacheStQ::*;
+import DCacheLHUSM::*;
 import FShow::*;
 import MessageFifo::*;
 import RefTypes::*;
@@ -109,7 +110,7 @@ module mkCore#(CoreID id)( WideMem iMem, RefDMem refDMem, Core ifc);
     MessageFifo#(8)   toParentQ <- mkMessageFifo;
     MessageFifo#(8) fromParentQ <- mkMessageFifo;
     ICache               iCache <- mkICache(iMem);
-    DCache               dCache <- mkDCacheStQ(id, toMessageGet(fromParentQ), toMessagePut(toParentQ), refDMem);
+    DCache               dCache <- mkDCacheLHUSM(id, toMessageGet(fromParentQ), toMessagePut(toParentQ), refDMem);
 
     // FIFO between two stages
     Fifo#(2, F2D) f2dFifo <- mkCFFifo;

@@ -9,7 +9,7 @@ import MyFifo::*;
 import Ehr::*;
 import GetPut::*;
 import ICache::*;
-//import DCache::*;
+import DCache::*;
 import DCacheStQ::*;
 import DCacheLHUSM::*;
 import MemReqIDGen::*;
@@ -45,7 +45,7 @@ module mkCore#(CoreID id)(
     ICache               iCache <- mkICache(iMem);
     MessageFifo#(8)   toParentQ <- mkMessageFifo;
     MessageFifo#(8) fromParentQ <- mkMessageFifo;
-    DCache               dCache <- mkDCacheStQ(id, toMessageGet(fromParentQ), toMessagePut(toParentQ), refDMem);
+    DCache               dCache <- mkDCacheLHUSM(id, toMessageGet(fromParentQ), toMessagePut(toParentQ), refDMem);
 
     //===================================================================//
     //function
